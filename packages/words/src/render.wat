@@ -42,6 +42,7 @@
     (global.set $lwActive (i32.and (i32.ne (global.get $lw) (i32.const 0)) (i32.eqz (global.get $mode))))
     (global.set $lwRec (i32.const 0))
     (global.set $lwOpener (i32.const 0))
+    (global.set $cellCodeUntil (i32.const 0))
     (if (global.get $mode)
       (then
         (global.set $prefixLen (i32.const 0))
@@ -964,7 +965,7 @@
       (local.set $start (local.get $p))
       (block $cellDone
         (loop $byte
-          (local.set $p (call $findCellBoundary (local.get $p) (local.get $end)))
+          (local.set $p (call $cellBoundary (local.get $p) (local.get $end)))
           (br_if $cellDone (i32.ge_u (local.get $p) (local.get $end)))
           (local.set $c (i32.load8_u (local.get $p)))
           (if (i32.eq (local.get $c) (i32.const "\5c"))

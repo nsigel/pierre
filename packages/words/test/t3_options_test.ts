@@ -388,3 +388,35 @@ void test('leadingWhitespace keeps what was typed past container structure', () 
   assert.equal(session.render('Plan\n   one', on).html, `<p>Plan\n${ws('   ')}one</p>\n`);
   assert.equal(session.render('Plan\n   one').html, '<p>Plan\none</p>\n');
 });
+
+void test('texDelimiters reads \\(…\\) and \\[…\\] as math', () => {
+  const on = { math: true, texDelimiters: true };
+  const formulas = (md: string, options: RenderOptions = on) =>
+    [...html(md, options).matchAll(/<svg [^>]*?display:(\w+)[^>]*?aria-label="([^"]*)"/g)].map(
+      ([, display, tex]) => `${display}:${tex.trim()}`
+    );
+  assert.deepEqual(
+    formulas('\\[\nE = mc^2\n\\]\n\nand \\(a\\) or \\[b\\] or \\[1, 2\\] inline'),
+    ['block:E = mc^2', 'inline:a', 'block:b']
+  );
+  assert.match(html('\\[1, 2\\] inline', on), /<p>\[1, 2\] inline<\/p>/);
+  // a backtick ends the scan; an escaped backslash is content
+  assert.deepEqual(formulas('\\(a `b` c\\) \\(x\\\\\\)'), ['inline:x\\\\']);
+  assert.deepEqual(formulas('\\\\(a\\)'), []);
+  // display blocks: a line ending in `\]` closes, blank lines stay inside
+  assert.deepEqual(formulas('p\n\\[\nq\n\\]'), ['block:q']);
+  assert.deepEqual(formulas('\\[\nx \\]'), ['block:x']);
+  assert.deepEqual(formulas('- \\[\n  a\n\n  b\n  \\]'), ['block:a\n\nb']);
+  assert.deepEqual(formulas('> \\[\n> z\n\n> \\]'), []);
+  // a pipe in a cell's math stays in the cell
+  assert.deepEqual(formulas('| a | b |\n| - | - |\n| $x|y$ | \\(p|q\\) |'), [
+    'inline:x|y',
+    'inline:p|q',
+  ]);
+  assert.match(html('| a | b |\n| - | - |\n| `$x|y$` | c |', on), /<td>`\$x<\/td>/);
+  // off, or without math, a backslash escapes as before
+  for (const options of [{ math: true }, { texDelimiters: true }]) {
+    assert.equal(html('\\(a\\) \\[b\\]', options), '<p>(a) [b]</p>\n');
+    assert.match(html('| a | b |\n| - | - |\n| $x|y$ | c |', options), /<td>\$x<\/td>/);
+  }
+});

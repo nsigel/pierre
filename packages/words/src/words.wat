@@ -57,7 +57,12 @@
     (global.set $mode (i32.load8_u (i32.const 0)))
     (global.set $fmt (i32.load8_u (i32.const 26)))
     (global.set $ext (i32.load8_u (i32.const 31)))
-    (global.set $lw (i32.load16_u (i32.const 34)))
+    (global.set $lw (i32.and (i32.load16_u (i32.const 34)) (i32.const 0x7fff)))
+    (global.set $texMath (i32.and (i32.shr_u (i32.load16_u (i32.const 34)) (i32.const 15))
+      (i32.shr_u (global.get $ext) (i32.const 1))))
+    ;; with texDelimiters `\` (bit 4 of byte 11) may start a math block
+    (i32.store8 offset=11 (i32.const $mem.blockStarts)
+      (i32.or (i32.const 0x88) (i32.shl (global.get $texMath) (i32.const 4))))
     ;; with the math option the scan tables mark `$` (low nibble 4, class 2),
     ;; and `$` (bit 4 of byte 4) may start a block
     (local.set $start (i32.and (global.get $ext) (i32.const 2)))
@@ -67,6 +72,8 @@
     (i32.store8 offset=4 (i32.const $mem.blockStarts)
       (i32.or (i32.const 9) (i32.shl (local.get $start) (i32.const 3))))
     (global.set $mathTo (i32.const 0))
+    (global.set $texTo (i32.const 0))
+    (global.set $cellCodeUntil (i32.const 0))
     (global.set $tableHead (i32.const 0))
     (global.set $eof (i32.add (i32.const $mem.input) (i32.load (i32.const 2))))
     (global.set $src (i32.const $mem.input))
@@ -231,7 +238,7 @@
         ;; completion ran (and cleared bit 6). Math fences still show.
         (if (i32.and
               (i32.and (i32.ne (i32.and (i32.load8_u (i32.const 1)) (i32.const 192)) (i32.const 0))
-                (i32.ne (global.get $codeFenceCh) (i32.const "$")))
+                (i32.eqz (call $isMathFence)))
               (i32.and (i32.eqz (i32.load offset=$R.nLines (global.get $leafRec)))
                 (i32.and
                   (i32.ne (i32.load8_u (i32.sub (global.get $eof) (i32.const 1))) (i32.const 10))

@@ -165,6 +165,9 @@
 
   ;; Option bits of control byte 31: 1 = cjk, 2 = math.
   (global $ext (mut i32) (i32.const 0))
+  ;; texDelimiters with math: `\(…\)` and `\[…\]` are math too (control bit
+  ;; 15 of bytes 34-35)
+  (global $texMath (mut i32) (i32.const 0))
 
   (func $isCjkCp (param $cp i32) (result i32)
     (i32.and (i32.ge_u (local.get $cp) (i32.const 0x1100))

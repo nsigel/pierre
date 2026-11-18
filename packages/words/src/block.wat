@@ -135,9 +135,10 @@
             (return (i32.const 1))))
         (local.set $line (call $lineStartBefore (local.get $stop) (local.get $p)))
         (local.set $end (call $findLineEnd (local.get $stop)))
-        (if (i32.eq (global.get $codeFenceCh) (i32.const "$"))
+        (if (call $isMathFence)
           (then (br_if $found
-            (local.tee $close (call $mathFenceEnd (local.get $line) (local.get $end)))))
+            (local.tee $close (call $mathFenceEnd (local.get $line) (local.get $end)
+              (i32.eq (global.get $codeFenceCh) (i32.const "\5c"))))))
           (else
             (local.set $q (call $runEnd (local.get $line) (local.get $stop) (i32.const 32)))
             (if (i32.eq (local.get $q) (local.get $stop))
@@ -656,9 +657,10 @@
             (then
               (if (global.get $codeFenceCh)
                 (then
-                  (if (i32.eq (global.get $codeFenceCh) (i32.const "$"))
+                  (if (call $isMathFence)
                     (then
-                      (if (local.tee $n (call $mathFenceEnd (global.get $fns) (global.get $lineEnd)))
+                      (if (local.tee $n (call $mathFenceEnd (global.get $fns) (global.get $lineEnd)
+                            (i32.eq (global.get $codeFenceCh) (i32.const "\5c"))))
                         (then
                           (if (i32.gt_u (local.get $n) (global.get $fns))
                             (then
@@ -780,7 +782,7 @@
                     $quote $stop $stop $stop $stop $stop $stop $stop $stop
                     $stop $stop $stop $stop $stop $stop $stop $stop $stop
                     $stop $stop $stop $stop $stop $stop $stop $stop $stop
-                    $stop $stop $footnote $stop $stop $stop $hr $fence $stop
+                    $stop $stop $footnote $fence $stop $stop $hr $fence $stop
                     $stop $stop $stop $stop $stop $stop $stop $stop $stop
                     $stop $stop $stop $stop $stop $stop $stop $stop $stop
                     $stop $stop $stop $stop $stop $stop $stop $stop $table
@@ -837,7 +839,7 @@
               (global.set $codeFenceOff (local.get $markerOff))
               (local.set $save (call $skipSpace (global.get $pos) (global.get $lineEnd)))
               (i32.store offset=8 (global.get $leafRec) (local.get $save))
-              (if (i32.eq (global.get $codeFenceCh) (i32.const "$"))
+              (if (call $isMathFence)
                 (then
                   ;; A math block has no info string.
                   (call $recFlag (global.get $leafRec) (i32.const $F.math))

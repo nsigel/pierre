@@ -46,7 +46,8 @@ const directiveName = /^[A-Za-z][A-Za-z0-9_-]{0,254}$/;
 
 /**
  * The parser extensions an option set turns on: control byte 31 in the low
- * byte, and leadingWhitespace's control bytes 34-35 above it.
+ * byte, and control bytes 34-35 above it (leadingWhitespace in bits 0-14,
+ * texDelimiters in bit 15).
  */
 function extensionFlags(options: Options | undefined): number {
   const lw = options?.leadingWhitespace;
@@ -54,8 +55,9 @@ function extensionFlags(options: Options | undefined): number {
     (lw === true
       ? 1 << 8
       : typeof lw === 'object'
-        ? (1 + Math.min(Math.max(Math.trunc(lw.indent) || 0, 0), 65534)) * 256
+        ? (1 + Math.min(Math.max(Math.trunc(lw.indent) || 0, 0), 32766)) * 256
         : 0) +
+    (options?.texDelimiters === true ? 1 << 23 : 0) +
     (
     (options?.cjk === true ? 1 : 0) |
     (options?.math === true ? 2 : 0) |
@@ -569,7 +571,9 @@ export function createHtmlSession(): {
         codeMeta: (ext & 16) !== 0,
         sourcePositions: (ext & 32) !== 0,
         escapeHtml: (ext & 128) !== 0,
-        leadingWhitespace: ext < 256 ? false : { indent: (ext >>> 8) - 1 },
+        leadingWhitespace:
+          (ext & 0x7fff00) === 0 ? false : { indent: ((ext >>> 8) & 0x7fff) - 1 },
+        texDelimiters: (ext & (1 << 23)) !== 0,
         directives: options?.directives,
         sourceOffset: nextOffsetBytes,
         boundary: true,

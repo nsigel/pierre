@@ -213,6 +213,8 @@
         ;; With the math option, `$$` opens a math block when no `$` follows
         ;; on its line and the block closes before a blank line or EOF. Text
         ;; after it is the first line of the block.
+        (if (i32.and (i32.eq (local.get $c) (i32.const "\5c")) (global.get $texMath))
+          (then (return (call $scanTexFence (local.get $p)))))
         (if (i32.or (i32.ne (local.get $c) (i32.const "$"))
               (i32.eqz (i32.and (global.get $ext) (i32.const 2))))
           (then (return (i32.const 0))))
@@ -223,7 +225,7 @@
               (i32.ge_u (call $findByte (local.get $i) (global.get $lineEnd) (i32.const "$"))
                 (global.get $lineEnd)))
             ;; a lone `$$` needs a later line
-            (then (i32.and (call $mathCloses (global.get $lineEnd))
+            (then (i32.and (call $mathCloses (global.get $lineEnd) (i32.const 0))
               (i32.or (i32.lt_u (call $lineAfter (global.get $lineEnd)) (global.get $eof))
                 (i32.lt_u (call $skipSpace (local.get $i) (global.get $lineEnd)) (global.get $lineEnd)))))
             (else (i32.const 0)))
@@ -237,12 +239,32 @@
           (then (return (i32.const 0))))))
     (i32.sub (local.get $i) (local.get $p)))
 
-  ;; The position of the `$$` that ends the line [$p,$end), or 0. Such a line
-  ;; closes an open math block, and the text before the `$$` is its last line.
-  ;; An odd run of backslashes before it makes the first `$` TeX's `\$`.
-  (func $mathFenceEnd (param $p i32) (param $end i32) (result i32)
+  ;; `\[` alone on its line opens a math block that closes as $mathCloses
+  ;; finds; returns the opener's length, or 0.
+  (func $scanTexFence (param $p i32) (result i32)
+    (if (i32.or (i32.ne (i32.load8_u offset=1 (local.get $p)) (i32.const "["))
+          (i32.lt_u (call $skipSpace (i32.add (local.get $p) (i32.const 2)) (global.get $lineEnd))
+            (global.get $lineEnd)))
+      (then (return (i32.const 0))))
+    (i32.shl (i32.and (call $mathCloses (global.get $lineEnd) (i32.const 1))
+      (i32.lt_u (call $lineAfter (global.get $lineEnd)) (global.get $eof))) (i32.const 1)))
+
+  ;; whether the open code fence is a math block
+  (func $isMathFence (result i32)
+    (i32.or (i32.eq (global.get $codeFenceCh) (i32.const "$"))
+      (i32.eq (global.get $codeFenceCh) (i32.const "\5c"))))
+
+  ;; The position of the `$$` (with $tex, the `\]`) that ends the line
+  ;; [$p,$end), or 0. Such a line closes an open math block, and the text
+  ;; before it is its last line. An odd run of backslashes before `$$` makes
+  ;; the first `$` TeX's `\$`.
+  (func $mathFenceEnd (param $p i32) (param $end i32) (param $tex i32) (result i32)
     (local $q i32)
     (local.set $end (i32.sub (call $trimSpaceBack (local.get $end) (local.get $p)) (i32.const 2)))
+    (if (local.get $tex)
+      (then (return (select (local.get $end) (i32.const 0)
+        (i32.and (i32.ge_u (local.get $end) (local.get $p))
+          (i32.eq (i32.load16_u (local.get $end)) (i32.const "\5c]")))))))
     (if (i32.or (i32.lt_u (local.get $end) (local.get $p))
           (i32.ne (i32.load16_u (local.get $end)) (i32.const "$$")))
       (then (return (i32.const 0))))
@@ -265,7 +287,8 @@
   ;; containers and finds no closer either, so $mathTo keeps that line and
   ;; each line is scanned once; $analyze clears it.
   (global $mathTo (mut i32) (i32.const 0))
-  (func $mathCloses (param $p i32) (result i32)
+  (global $texTo (mut i32) (i32.const 0)) ;; $mathTo of `\[` blocks
+  (func $mathCloses (param $p i32) (param $tex i32) (result i32)
     (local $d i32)
     (local $end i32)
     (local $q i32)
@@ -277,7 +300,8 @@
     (local $e i32)
     (local $c i32)
     (local $ok i32)
-    (if (i32.lt_u (local.get $p) (global.get $mathTo)) (then (return (i32.const 0))))
+    (if (i32.lt_u (local.get $p) (select (global.get $texTo) (global.get $mathTo) (local.get $tex)))
+      (then (return (i32.const 0))))
     (local.set $d (call $spineDepth))
     (block $done
       (loop $line
@@ -308,8 +332,20 @@
                   (local.set $fcol (i32.add (local.get $fcol) (i32.const 1)))))
               (local.set $f (i32.add (local.get $f) (i32.const 1)))
               (br $space)))
-          ;; a blank line ends the block unclosed
-          (br_if $done (i32.ge_u (local.get $f) (local.get $end)))
+          ;; A blank line ends a `$$` block unclosed. A `\[` block holds it,
+          ;; unless the line ends a quote around it.
+          (if (i32.ge_u (local.get $f) (local.get $end))
+            (then
+              (br_if $done (i32.eqz (local.get $tex)))
+              (local.set $e (local.get $i))
+              (block $open
+                (loop $quotes
+                  (br_if $open (i32.ge_u (local.get $e) (local.get $d)))
+                  (local.set $e (i32.add (local.get $e) (i32.const 1)))
+                  (br_if $done (i32.eq (i32.load8_u (call $containerAt (local.get $e))) (enum.get $Blk.quote)))
+                  (br $quotes)))
+              (local.set $p (local.get $end))
+              (br $line)))
           (if (i32.lt_u (local.get $i) (local.get $d))
             (then
               (local.set $i (i32.add (local.get $i) (i32.const 1)))
@@ -352,10 +388,13 @@
                       (local.set $col (local.get $e))))))
               (br $level))))
         (local.set $ok (i32.const 1))
-        (br_if $done (call $mathFenceEnd (local.get $f) (local.get $end)))
+        (br_if $done (call $mathFenceEnd (local.get $f) (local.get $end) (local.get $tex)))
         (local.set $p (local.get $end))
         (br $line)))
-    (if (i32.eqz (local.get $ok)) (then (global.set $mathTo (local.get $p))))
+    (if (i32.eqz (local.get $ok))
+      (then (if (local.get $tex)
+        (then (global.set $texTo (local.get $p)))
+        (else (global.set $mathTo (local.get $p))))))
     (local.get $ok))
 
   ;; a bullet or ordered list marker; returns its width in bytes and leaves the
@@ -649,7 +688,7 @@
         (local.set $cellStart (local.get $p))
         (block $cellDone
           (loop $byte
-            (local.set $p (call $findCellBoundary (local.get $p) (local.get $end)))
+            (local.set $p (call $cellBoundary (local.get $p) (local.get $end)))
             (br_if $cellDone (i32.ge_u (local.get $p) (local.get $end)))
             (local.set $c (i32.load8_u (local.get $p)))
             (if (i32.eq (local.get $c) (i32.const "\5c"))

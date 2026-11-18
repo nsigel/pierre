@@ -45,6 +45,13 @@ export interface HtmlSessionOptions {
   /** Render `$…$`, `$$…$$`, `$$` blocks, and `math` code blocks as SVG. */
   math?: boolean;
   /**
+   * With `math`, also read `\(…\)` as inline math and `\[…\]` as display
+   * math, inline or as a block, as micromark-extension-llm-math does. A pipe
+   * inside a table cell's math stays in the cell, as T3 Code's patched
+   * micromark-extension-gfm-table keeps it.
+   */
+  texDelimiters?: boolean;
+  /**
    * With `false`, only a run of exactly two tildes is a strikethrough
    * delimiter, as remark-gfm's `singleTilde: false`. Defaults to `true`.
    */

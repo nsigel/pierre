@@ -83,6 +83,7 @@
   ;; Set by $handleDollar when an opening `$` run found no closer before the
   ;; content ended, so more input can still make it math.
   (global $mathAtEnd (mut i32) (i32.const 0))
+  (global $mathRun (mut i32) (i32.const 0))
   (global $lastMarkEnd (mut i32) (i32.const 0))
   (global $literalNeedsEscape (mut i32) (i32.const 0))
 
@@ -349,6 +350,10 @@
 
   (func $handleBackslash (param $p i32) (param $end i32) (result i32)
     (local $c i32)
+    (if (global.get $texMath)
+      (then
+        (local.set $c (call $handleTexMath (local.get $p) (local.get $end)))
+        (if (local.get $c) (then (return (local.get $c))))))
     (if (i32.lt_u (i32.add (local.get $p) (i32.const 1)) (local.get $end))
       (then
         (local.set $c (i32.load8_u offset=1 (i32.add (global.get $contentBase) (local.get $p))))
@@ -526,26 +531,25 @@
   ;; opens only before a non-space, and the next `$` either closes it, after a
   ;; non-space and before a non-digit, or leaves it as text. So prices stay
   ;; text. $mathAtEnd says the content ended before a `$` could close the run.
-  (func $handleDollar (param $p i32) (param $end i32) (result i32)
-    (local $base i32)
+  (func $dollarMath (param $base i32) (param $p i32) (param $end i32) (result i32)
     (local $q i32)
     (local $n i32)
     (local $i i32)
     (local $c i32)
     (global.set $mathAtEnd (i32.const 0))
-    (local.set $base (global.get $contentBase))
     (local.set $q (local.get $p))
     (loop $run
       (local.set $q (i32.add (local.get $q) (i32.const 1)))
       (br_if $run (i32.and (i32.lt_u (local.get $q) (local.get $end))
         (i32.eq (i32.load8_u (i32.add (local.get $base) (local.get $q))) (i32.const "$")))))
     (local.set $n (i32.sub (local.get $q) (local.get $p)))
+    (global.set $mathRun (local.get $q))
     (if (i32.or (i32.gt_u (local.get $n) (i32.const 2)) (i32.ge_u (local.get $q) (local.get $end)))
-      (then (return (local.get $q))))
+      (then (return (i32.const 0))))
     (if (i32.and (i32.eq (local.get $n) (i32.const 1))
           (call $isWhiteCp (call $utf8At (i32.add (local.get $base) (local.get $q))
             (i32.add (local.get $base) (local.get $end)))))
-      (then (return (local.get $q))))
+      (then (return (i32.const 0))))
     (local.set $i (local.get $q))
     (block $none
       (loop $scan
@@ -568,11 +572,132 @@
           (else (br_if $none (i32.or (call $isDigit (local.get $c))
             (call $isWhiteCp (call $utf8Before (i32.sub (i32.add (local.get $base) (local.get $i)) (i32.const 1))
               (i32.add (local.get $base) (local.get $q))))))))
-        (local.set $i (i32.add (local.get $i) (i32.sub (local.get $n) (i32.const 1))))
-        (drop (call $markNew (i32.or (enum.get $Mk.math) (i32.shl (local.get $n) (i32.const 16)))
-          (local.get $p) (local.get $i) (local.get $q)))
-        (return (local.get $i))))
-    (local.get $q))
+        (return (i32.add (local.get $i) (i32.sub (local.get $n) (i32.const 1))))))
+    (i32.const 0))
+
+  ;; The math at the `$` run at content offset $p becomes a mark.
+  (func $handleDollar (param $p i32) (param $end i32) (result i32)
+    (local $i i32)
+    (local.set $i (call $dollarMath (global.get $contentBase) (local.get $p) (local.get $end)))
+    (if (i32.eqz (local.get $i)) (then (return (global.get $mathRun))))
+    (drop (call $markNew (i32.or (enum.get $Mk.math)
+        (i32.shl (i32.sub (global.get $mathRun) (local.get $p)) (i32.const 16)))
+      (local.get $p) (local.get $i) (global.get $mathRun)))
+    (local.get $i))
+
+  ;; `\(…\)` (inline) or `\[…\]` (display) math, as llm-math reads it: no
+  ;; backtick before the closer, an escaped backslash is content, and a
+  ;; `\[` closes only after something other than digits, commas, spaces,
+  ;; backslashes and line endings. Returns the end of the math, or 0.
+  (func $texMath (param $base i32) (param $p i32) (param $end i32) (result i32)
+    (local $open i32)
+    (local $i i32)
+    (local $c i32)
+    (local $words i32)
+    (if (i32.ge_u (i32.add (local.get $p) (i32.const 1)) (local.get $end)) (then (return (i32.const 0))))
+    (local.set $open (i32.load8_u offset=1 (i32.add (local.get $base) (local.get $p))))
+    (if (i32.and (i32.ne (local.get $open) (i32.const "(")) (i32.ne (local.get $open) (i32.const "[")))
+      (then (return (i32.const 0))))
+    (local.set $i (i32.add (local.get $p) (i32.const 2)))
+    (block $none
+      (loop $scan
+        (br_if $none (i32.ge_u (local.get $i) (local.get $end)))
+        (local.set $c (i32.load8_u (i32.add (local.get $base) (local.get $i))))
+        (br_if $none (i32.eq (local.get $c) (i32.const "\60")))
+        (if (i32.eq (local.get $c) (i32.const "\5c"))
+          (then
+            (local.set $i (i32.add (local.get $i) (i32.const 1)))
+            (br_if $none (i32.ge_u (local.get $i) (local.get $end)))
+            (local.set $c (i32.load8_u (i32.add (local.get $base) (local.get $i))))
+            (if (i32.eq (local.get $c)
+                  (select (i32.const ")") (i32.const "]") (i32.eq (local.get $open) (i32.const "("))))
+              (then
+                (br_if $none (i32.and (i32.eq (local.get $open) (i32.const "["))
+                  (i32.eqz (local.get $words))))
+                (return (i32.add (local.get $i) (i32.const 1)))))
+            ;; an escaped backslash is content; another byte is read as data
+            (if (i32.eq (local.get $c) (i32.const "\5c"))
+              (then
+                (local.set $i (i32.add (local.get $i) (i32.const 1)))
+                (br $scan)))
+            (br $scan)))
+        (if (i32.eqz (i32.or (i32.or (i32.eq (local.get $c) (i32.const 32)) (i32.eq (local.get $c) (i32.const ",")))
+              (i32.or (i32.or (i32.eq (local.get $c) (i32.const 10)) (i32.eq (local.get $c) (i32.const 13)))
+                (i32.lt_u (i32.sub (local.get $c) (i32.const "0")) (i32.const 10)))))
+          (then (local.set $words (i32.const 1))))
+        (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (br $scan)))
+    (i32.const 0))
+
+  ;; The tex math at content offset $p becomes a mark: `\(` inline, `\[` display.
+  (func $handleTexMath (param $p i32) (param $end i32) (result i32)
+    (local $i i32)
+    (local.set $i (call $texMath (global.get $contentBase) (local.get $p) (local.get $end)))
+    (if (local.get $i)
+      (then (drop (call $markNew (i32.or (enum.get $Mk.math)
+          (i32.shl (select (i32.const 1) (i32.const 2)
+            (i32.eq (i32.load8_u offset=1 (call $contentAt (local.get $p))) (i32.const "(")))
+            (i32.const 16)))
+        (local.get $p) (local.get $i) (i32.add (local.get $p) (i32.const 2))))))
+    (local.get $i))
+
+  ;; With texDelimiters, the next `\` or `|` in a table row at or after $p, past math
+  ;; spans, whose pipes stay in their cell. Math does not start in a code span.
+  (global $cellCodeUntil (mut i32) (i32.const 0))
+  (func $cellBoundaryMath (param $p i32) (param $end i32) (result i32)
+    (local $c i32)
+    (local $q i32)
+    (local $n i32)
+    (local $atEnd i32)
+    (local.set $atEnd (global.get $mathAtEnd))
+    (block $done
+      (loop $l
+        (br_if $done (i32.ge_u (local.get $p) (local.get $end)))
+        (local.set $c (i32.load8_u (local.get $p)))
+        (br_if $done (i32.eq (local.get $c) (i32.const "|")))
+        (if (i32.eq (local.get $c) (i32.const "\5c"))
+          (then
+            (if (i32.and (global.get $texMath) (i32.ge_u (local.get $p) (global.get $cellCodeUntil)))
+              (then
+                (local.set $q (call $texMath (i32.const 0) (local.get $p) (local.get $end)))
+                (if (local.get $q)
+                  (then
+                    (local.set $p (local.get $q))
+                    (br $l)))))
+            (br $done)))
+        (if (i32.eq (local.get $c) (i32.const "\60"))
+          (then
+            ;; a code span: a run of backticks up to an equal run
+            (local.set $q (call $runEnd (local.get $p) (local.get $end) (i32.const "\60")))
+            (local.set $n (i32.sub (local.get $q) (local.get $p)))
+            (local.set $p (local.get $q))
+            (block $closed
+              (loop $find
+                (local.set $q (call $findByte (local.get $q) (local.get $end) (i32.const "\60")))
+                (br_if $closed (i32.ge_u (local.get $q) (local.get $end)))
+                (local.set $c (call $runEnd (local.get $q) (local.get $end) (i32.const "\60")))
+                (if (i32.eq (i32.sub (local.get $c) (local.get $q)) (local.get $n))
+                  (then
+                    (global.set $cellCodeUntil (local.get $c))
+                    (br $closed)))
+                (local.set $q (local.get $c))
+                (br $find)))
+            (br $l)))
+        (if (i32.and (i32.eq (local.get $c) (i32.const "$"))
+              (i32.ge_u (local.get $p) (global.get $cellCodeUntil)))
+          (then
+            (local.set $q (call $dollarMath (i32.const 0) (local.get $p) (local.get $end)))
+            (local.set $p (select (local.get $q) (global.get $mathRun) (local.get $q)))
+            (br $l)))
+        (local.set $p (i32.add (local.get $p) (i32.const 1)))
+        (br $l)))
+    (global.set $mathAtEnd (local.get $atEnd))
+    (select (local.get $end) (local.get $p) (i32.gt_u (local.get $p) (local.get $end))))
+
+  (func $cellBoundary (param $p i32) (param $end i32) (result i32)
+    (if (result i32) (global.get $texMath)
+      (then (call $cellBoundaryMath (local.get $p) (local.get $end)))
+      (else (call $findCellBoundary (local.get $p) (local.get $end)))))
 
   ;; The shortest tilde run that strikes: 2 without single tildes, else 1.
   (func $minTildes (result i32)

@@ -27,8 +27,9 @@
                       positions, bit 6 = directives, bit 7 = escape raw HTML
       [32:34)         byte length of the directive names that end at
                       $mem.idPrefixEnd (u16 LE): [length u8][name] entries
-      [34:36)         leading whitespace (u16 LE, see leading.wat): 0 = off,
-                      otherwise 1 + the columns each line is already indented
+      [34:36)         u16 LE: bits 0-14 = leading whitespace (see leading.wat),
+                      0 = off, otherwise 1 + the columns each line is already
+                      indented; bit 15 = texDelimiters (`\(…\)`, `\[…\]` math)
       [36:40)         UTF-16 length of the input before the boundary (option bit 3)
       [40:44)         UTF-16 length of the output before the boundary (option bit 3)
       [44:48)         UTF-8 bytes before the input, added to source positions
