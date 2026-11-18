@@ -75,6 +75,16 @@ export interface HtmlOptions {
   cjk?: boolean;
   /** Math as SVG. See `HtmlSessionOptions.math`. */
   math?: boolean;
+  /** See `HtmlSessionOptions.singleTilde`. */
+  singleTilde?: boolean;
+  /** See `HtmlSessionOptions.windowsPaths`. */
+  windowsPaths?: boolean;
+  /** See `HtmlSessionOptions.codeMeta`. */
+  codeMeta?: boolean;
+  /** See `HtmlSessionOptions.sourcePositions`. */
+  sourcePositions?: boolean;
+  /** See `HtmlSessionOptions.directives`. */
+  directives?: readonly string[];
   components?: Components;
   plugins?: PluginConfig;
   controls?: boolean | ControlsConfig;

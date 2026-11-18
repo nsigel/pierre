@@ -508,6 +508,10 @@
         (return (local.get $i))))
     (local.get $q))
 
+  ;; The shortest tilde run that strikes: 2 without single tildes, else 1.
+  (func $minTildes (result i32)
+    (i32.add (i32.const 1) (i32.and (i32.shr_u (global.get $ext) (i32.const 2)) (i32.const 1))))
+
   (func $handleDelim (param $p i32) (param $end i32) (result i32)
     (local $base i32)
     (local $cjk i32)
@@ -529,9 +533,13 @@
         (local.set $q (i32.add (local.get $q) (i32.const 1)))
         (br $l)))
     (local.set $n (i32.sub (local.get $q) (local.get $p)))
-    ;; only runs of one or two tildes are strikethrough delimiters
-    (if (i32.and (i32.eq (local.get $c) (i32.const "~")) (i32.gt_u (local.get $n) (i32.const 2)))
-      (then (return (local.get $q))))
+    ;; only runs of one or two tildes are strikethrough delimiters, and only
+    ;; runs of two without single tildes (extension bit 2)
+    (if (i32.eq (local.get $c) (i32.const "~"))
+      (then
+        (if (i32.gt_u (i32.sub (local.get $n) (local.tee $k (call $minTildes)))
+              (i32.sub (i32.const 2) (local.get $k)))
+          (then (return (local.get $q))))))
     ;; $k is the class of the character before the run times four plus the
     ;; class after it: 2 for whitespace, 1 for punctuation, else 0. The text
     ;; boundaries count as whitespace. Two bits per $k give left and right

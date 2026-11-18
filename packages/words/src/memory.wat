@@ -22,9 +22,14 @@
       [28:30)         byte length of the id prefix at $mem.idPrefix (u16 LE)
       [30]            document contains global definitions
       [31]            extension flags (u8): bit 0 = CJK-friendly emphasis,
-                      bit 1 = math
+                      bit 1 = math, bit 2 = no single-tilde strikethrough,
+                      bit 3 = Windows paths, bit 4 = code meta, bit 5 = source
+                      positions, bit 6 = directives
+      [32:34)         byte length of the directive names that end at
+                      $mem.idPrefixEnd (u16 LE): [length u8][name] entries
       [36:40)         UTF-16 length of the input before the boundary (option bit 3)
       [40:44)         UTF-16 length of the output before the boundary (option bit 3)
+      [44:48)         UTF-8 bytes before the input, added to source positions
       [48:64)         decimal conversion scratch
       [64:80)         hex digits
       [80:65536)      static tables and work areas, in this order: CJK ranges,
@@ -117,6 +122,7 @@
   (const $mem.mathInfixBitsEnd $mem.mathInfixBits+3072)
   ;; Already escaped; written by the host.
   (const $mem.idPrefix 61440)
+  (const $mem.idPrefixEnd 65536)
   ;; Math box nodes (pages 3-4) are 48 bytes each.
   (const $mem.mathGlyphs 65536)
   (const $mem.mathGlyphsEnd $mem.mathGlyphs+10240)

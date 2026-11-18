@@ -411,8 +411,9 @@
           (then (local.set $flags (i32.const 3))))
         (if (i32.eq (local.get $c) (i32.const "~"))
           (then
-            ;; three or more tildes are text
-            (if (i32.gt_u (local.get $n) (i32.const 2))
+            ;; three or more tildes are text, and so is one without single tildes
+            (if (i32.gt_u (i32.sub (local.get $n) (call $minTildes))
+                  (i32.sub (i32.const 2) (call $minTildes)))
               (then
                 (local.set $p (local.get $q))
                 (br $scan))))

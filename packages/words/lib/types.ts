@@ -44,6 +44,30 @@ export interface HtmlSessionOptions {
   cjk?: boolean;
   /** Render `$…$`, `$$…$$`, `$$` blocks, and `math` code blocks as SVG. */
   math?: boolean;
+  /**
+   * With `false`, only a run of exactly two tildes is a strikethrough
+   * delimiter, as remark-gfm's `singleTilde: false`. Defaults to `true`.
+   */
+  singleTilde?: boolean;
+  /**
+   * Keep the backslashes of Windows drive paths: a link, image, or definition
+   * destination such as `C:\me\.t3\a.png` keeps every backslash, and in prose
+   * an escape keeps its backslash while the word before it is a drive path.
+   */
+  windowsPaths?: boolean;
+  /** Put the info string after a fenced code block's language on `<code>` as `data-meta`. */
+  codeMeta?: boolean;
+  /**
+   * Add `data-sourcepos="start-end"`, UTF-8 byte offsets into the input with
+   * an exclusive end, to list items, links, images, and directives.
+   */
+  sourcePositions?: boolean;
+  /**
+   * Names of the remark-directive text (`:name[label]{attrs}`) and leaf
+   * (`::name[label]{attrs}`) directives to render, as
+   * `<span>`/`<div data-directive="name" data-attributes="{JSON}">`.
+   */
+  directives?: readonly string[];
 }
 
 /** The result of one session render. */

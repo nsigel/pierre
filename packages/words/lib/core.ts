@@ -24,7 +24,12 @@ export type {
 
 type Input = string | Uint8Array | ArrayBuffer;
 type Options = AnsiOptions &
-  RenderOptions & { boundary?: boolean; format?: HtmlFormat };
+  RenderOptions & {
+    boundary?: boolean;
+    format?: HtmlFormat;
+    /** UTF-8 bytes before the input, added to source positions. */
+    sourceOffset?: number;
+  };
 
 const enc = new TextEncoder();
 const dec = new TextDecoder('utf-8', { ignoreBOM: true });
@@ -33,9 +38,48 @@ const pageSize = 65536;
 const inputAt = 4 * pageSize;
 const maxInput = 2 ** 30 - inputAt - pageSize;
 
-// `$mem.idPrefix` in src/memory.wat, and the room it has.
+// `$mem.idPrefix` in src/memory.wat, and the room it has. Directive names
+// fill the same room from its end.
 const idPrefixAt = 61440;
 const idPrefixRoom = 4096;
+const directiveName = /^[A-Za-z][A-Za-z0-9_-]{0,254}$/;
+
+/** Control byte 31: the parser extensions an option set turns on. */
+function extensionFlags(options: Options | undefined): number {
+  return (
+    (options?.cjk === true ? 1 : 0) |
+    (options?.math === true ? 2 : 0) |
+    (options?.singleTilde === false ? 4 : 0) |
+    (options?.windowsPaths === true ? 8 : 0) |
+    (options?.codeMeta === true ? 16 : 0) |
+    (options?.sourcePositions === true ? 32 : 0)
+  );
+}
+
+/** The directive names that can match, one per line. */
+function directiveKey(directives: readonly string[] | undefined): string {
+  if (directives === undefined || directives.length === 0) return '';
+  return directives.filter((name) => directiveName.test(name)).join('\n');
+}
+
+function utf8Length(value: string): number {
+  let n = value.length;
+  for (let i = 0; i < value.length; i++) {
+    const c = value.charCodeAt(i);
+    if (c >= 0x80) {
+      if (c < 0x800) n++;
+      else if (
+        (c & 0xfc00) === 0xd800 &&
+        i + 1 < value.length &&
+        (value.charCodeAt(i + 1) & 0xfc00) === 0xdc00
+      ) {
+        n += 2;
+        i++;
+      } else n += 2;
+    }
+  }
+  return n;
+}
 
 // Keep the core entrypoint self-contained while sharing the renderer's private keys.
 const delta = Symbol.for(
@@ -100,6 +144,8 @@ class Renderer {
   pages!: number;
   idPrefix = '';
   idPrefixLength = 0;
+  directives = '';
+  directivesLength = 0;
 
   constructor(wasmModule: WebAssembly.Module) {
     const instance = new WebAssembly.Instance(wasmModule, {});
@@ -167,10 +213,34 @@ class Renderer {
         (mode === 1 && typeof input !== 'string' ? 32 : 0) |
         (options?.incomplete === true ? 64 : 0)
     );
+    const directives = directiveKey(options?.directives);
+    if (directives !== this.directives) {
+      const bytes =
+        directives === ''
+          ? []
+          : directives.split('\n').map((name) => enc.encode(name));
+      const length = bytes.reduce((sum, name) => sum + name.length + 1, 0);
+      if (length + this.idPrefixLength > idPrefixRoom) {
+        throw new RangeError(
+          `idPrefix and directives exceed ${idPrefixRoom} bytes of UTF-8`
+        );
+      }
+      // [length][name] entries ending at the end of the id prefix room
+      let at = idPrefixAt + idPrefixRoom - length;
+      for (const name of bytes) {
+        this.buffer[at++] = name.length;
+        this.buffer.set(name, at);
+        at += name.length;
+      }
+      this.directives = directives;
+      this.directivesLength = length;
+    }
+    this.dv.setUint16(32, this.directivesLength, true);
     this.dv.setUint8(
       31,
-      (options?.cjk === true ? 1 : 0) | (options?.math === true ? 2 : 0)
+      extensionFlags(options) | (this.directivesLength === 0 ? 0 : 64)
     );
+    this.dv.setUint32(44, options?.sourceOffset ?? 0, true);
     this.dv.setUint32(2, inputLength, true);
     const format = options?.format;
     // The byte after the flags tells whether a code block is in slots.
@@ -179,7 +249,10 @@ class Renderer {
       if (format.idPrefix !== this.idPrefix) {
         const { read, written } = enc.encodeInto(
           format.idPrefix,
-          this.buffer.subarray(idPrefixAt, idPrefixAt + idPrefixRoom)
+          this.buffer.subarray(
+            idPrefixAt,
+            idPrefixAt + idPrefixRoom - this.directivesLength
+          )
         );
         if (read < format.idPrefix.length) {
           // the buffer now holds a part of the rejected prefix
@@ -289,6 +362,9 @@ export function createHtmlSession(): {
   let definitions = false;
   let incomplete: boolean | undefined;
   let extensions: number | undefined;
+  let directives: string | undefined;
+  // UTF-8 bytes before `offset`, while source positions are on
+  let offsetBytes = 0;
   let flags: number | undefined;
   let idPrefix: string | undefined;
   let result: InternalHtmlUpdate | undefined;
@@ -313,12 +389,13 @@ export function createHtmlSession(): {
       if (typeof input !== 'string')
         throw new TypeError('session input must be a string');
       const wanted = options?.incomplete === true;
-      const ext =
-        (options?.cjk === true ? 1 : 0) | (options?.math === true ? 2 : 0);
+      const ext = extensionFlags(options);
+      const names = directiveKey(options?.directives);
       const form = options?.[format];
       const sameMode =
         incomplete === wanted &&
         extensions === ext &&
+        directives === names &&
         flags === form?.flags &&
         idPrefix === form?.idPrefix;
       if (input === previous && sameMode && result != null) return result;
@@ -471,11 +548,18 @@ export function createHtmlSession(): {
       // A render can throw, so session state changes only after it succeeds.
       let nextStable = reset ? '' : stable;
       let nextOffset = reset ? 0 : offset;
-      const renderOptions = {
+      let nextOffsetBytes = reset ? 0 : offsetBytes;
+      const renderOptions: Options = {
         skipHtml: true,
         incomplete: wanted,
         cjk: (ext & 1) !== 0,
         math: (ext & 2) !== 0,
+        singleTilde: (ext & 4) === 0,
+        windowsPaths: (ext & 8) !== 0,
+        codeMeta: (ext & 16) !== 0,
+        sourcePositions: (ext & 32) !== 0,
+        directives: options?.directives,
+        sourceOffset: nextOffsetBytes,
         boundary: true,
         format: form,
       };
@@ -484,6 +568,8 @@ export function createHtmlSession(): {
       if (nextOffset !== 0 && shared.dv.getUint8(30) !== 0) {
         nextStable = '';
         nextOffset = 0;
+        nextOffsetBytes = 0;
+        renderOptions.sourceOffset = 0;
         reset = true;
         tail = input;
         rendered = shared.render(tail, 0, renderOptions);
@@ -498,14 +584,18 @@ export function createHtmlSession(): {
       if (completed > 0 && completed <= tail.length) {
         addition = html.slice(0, shared.dv.getUint32(40, true));
         nextStable += addition;
+        if ((ext & 32) !== 0)
+          nextOffsetBytes += utf8Length(tail.slice(0, completed));
         nextOffset += completed;
         pending = html.slice(addition.length);
       }
       stable = nextStable;
       offset = nextOffset;
+      offsetBytes = nextOffsetBytes;
       previous = input;
       incomplete = wanted;
       extensions = ext;
+      directives = names;
       flags = form?.flags;
       idPrefix = form?.idPrefix;
       const completedHtml = stable;

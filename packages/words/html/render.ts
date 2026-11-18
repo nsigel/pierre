@@ -820,6 +820,11 @@ export function createHtmlRenderer(options: HtmlOptions = {}) {
           incomplete,
           cjk: options.cjk,
           math: options.math,
+          singleTilde: options.singleTilde,
+          windowsPaths: options.windowsPaths,
+          codeMeta: options.codeMeta,
+          sourcePositions: options.sourcePositions,
+          directives: options.directives,
           [formatKey]: {
             flags:
               formatFlags.on |
