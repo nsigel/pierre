@@ -391,7 +391,9 @@
     (call $htmlInfoWord (local.get $r))
     (if (i32.eq (global.get $out) (local.get $i))
       (then (global.set $out (local.get $at)))
-      (else (call $outByte (i32.const 34))))
+      (else
+        (call $outByte (i32.const 34))
+        (call $htmlCodeMeta (local.get $r))))
     (call $outByte (i32.const ">"))
     (if (local.get $slots) (then (call $outByte (i32.const 0))))
     (if (local.get $slots)

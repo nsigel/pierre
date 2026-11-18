@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { createHtmlRenderer } from '../dist/html.js';
 import {
   createHtmlSession,
   type RenderOptions,
@@ -85,4 +86,25 @@ void test('windowsPaths keeps escapes inside prose drive paths', () => {
     html(String.raw`C:\Users\me\.t3`),
     String.raw`<p>C:\Users\me.t3</p>` + '\n'
   );
+});
+
+void test('codeMeta puts the info string after the language on <code>', () => {
+  const on = { codeMeta: true };
+  const source = '```ts  title="x" \\* &amp;  \n1\n```\n\n```ts\n2\n```\n';
+  assert.equal(
+    html(source, on),
+    '<pre><code class="language-ts" data-meta="title=&quot;x&quot; * &amp;">1\n' +
+      '</code></pre>\n<pre><code class="language-ts">2\n</code></pre>\n'
+  );
+  assert.doesNotMatch(html(source), /data-meta/);
+  assert.match(
+    createHtmlSession().render('```ts title="x"\n1', on).html,
+    /<code class="language-ts" data-meta="title=&quot;x&quot;">/
+  );
+  const formatted = createHtmlRenderer(on).render(source, false).html;
+  assert.match(
+    formatted,
+    /<code data-markdown="code" class="language-ts" data-meta="title=&quot;x&quot; \* &amp;">/
+  );
+  assert.equal(formatted.match(/data-meta/g)?.length, 1);
 });

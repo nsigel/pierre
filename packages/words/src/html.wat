@@ -163,9 +163,41 @@
       (then
         (global.set $out (i32.sub (local.get $word) (i32.const 22)))
         (out.str "<code>"))
-      (else (out.str "\22>")))
+      (else
+        (call $outByte (i32.const 34))
+        (call $htmlCodeMeta (local.get $r))
+        (call $outByte (i32.const ">"))))
     (call $htmlCodeLines (local.get $r))
     (out.str "</code></pre>\n"))
+
+  ;; codeMeta: ` data-meta="..."` with the info string after its first word,
+  ;; trimmed, its escapes and entities resolved as for the language.
+  (func $htmlCodeMeta (param $r i32)
+    (local $p i32)
+    (local $e i32)
+    (if (i32.eqz (i32.and (global.get $ext) (i32.const 16))) (then (return)))
+    (local.set $p (i32.load offset=8 (local.get $r)))
+    (local.set $e (i32.load offset=12 (local.get $r)))
+    (block $word
+      (loop $l
+        (br_if $word (i32.ge_u (local.get $p) (local.get $e)))
+        (br_if $word (call $isWhiteByte (i32.load8_u (local.get $p))))
+        (local.set $p (i32.add (local.get $p) (i32.const 1)))
+        (br $l)))
+    (local.set $p (call $skipWs (local.get $p) (local.get $e)))
+    (block $trimmed
+      (loop $l
+        (br_if $trimmed (i32.le_u (local.get $e) (local.get $p)))
+        (br_if $trimmed (i32.eqz (call $isWhiteByte
+          (i32.load8_u (i32.sub (local.get $e) (i32.const 1))))))
+        (local.set $e (i32.sub (local.get $e) (i32.const 1)))
+        (br $l)))
+    (if (i32.ge_u (local.get $p) (local.get $e)) (then (return)))
+    (call $ensureOut (i32.add
+      (i32.mul (i32.sub (local.get $e) (local.get $p)) (i32.const 12)) (i32.const 64)))
+    (out.str " data-meta=\22")
+    (call $outCleanText (local.get $p) (local.get $e) (i32.const 3))
+    (call $outByte (i32.const 34)))
 
   ;; write $n spaces, at most eight (a line's virtual tab padding)
   (func $outSpaces (param $n i32)
