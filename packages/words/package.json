@@ -1,13 +1,14 @@
 {
   "name": "@pierre/words",
-  "version": "0.2.2",
+  "version": "0.2.2-t3.1",
   "description": "A fast markdown renderer written in WebAssembly Text.",
   "license": "apache-2.0",
   "files": [
     "dist/",
     "!dist/benchmark/",
     "LICENSE.md",
-    "NOTICE.md"
+    "NOTICE.md",
+    "t3-fork.json"
   ],
   "type": "module",
   "main": "./dist/index.js",
