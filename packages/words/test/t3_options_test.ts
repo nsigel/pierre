@@ -30,3 +30,59 @@ void test('singleTilde: false strikes only runs of two tildes', () => {
   assert.equal(complete('~one', off), '<p>~one</p>\n');
   assert.equal(complete('a ~one', { incomplete: true }), '<p>a ~one</p>\n');
 });
+
+void test('windowsPaths keeps the backslashes of drive path destinations', () => {
+  const on = { windowsPaths: true };
+  assert.equal(
+    html(String.raw`[x](C:\me\.t3\a.png) [y](C:/a\_b) [z](\\host\.x)`, on),
+    '<p><a href="C:%5Cme%5C.t3%5Ca.png">x</a> <a href="C:/a%5C_b">y</a> ' +
+      '<a href="%5Chost.x">z</a></p>\n'
+  );
+  assert.equal(
+    html(String.raw`[x](C:\me\.t3\a.png)`),
+    '<p><a href="C:%5Cme.t3%5Ca.png">x</a></p>\n'
+  );
+  // entity references still decode once
+  for (const prefix of ['', '!']) {
+    assert.match(
+      html(`${prefix}[s](<C:\\R&amp;D folder\\.t3\\s.png>)`, on),
+      /="C:%5CR&amp;D%20folder%5C.t3%5Cs.png"/
+    );
+  }
+  assert.equal(
+    html('[r]\n\n[r]: <C:\\work\\&amp;lt;\\.t3\\s.png>', on),
+    '<p><a href="C:%5Cwork%5C&amp;lt;%5C.t3%5Cs.png">r</a></p>\n'
+  );
+});
+
+void test('windowsPaths keeps escapes inside prose drive paths', () => {
+  const on = { windowsPaths: true };
+  assert.equal(
+    html(String.raw`C:\Users\me\.t3 and "C:\" and C:\x and \*this\*`, on),
+    String.raw`<p>C:\Users\me\.t3 and &quot;C:\&quot; and C:\x and *this*</p>` +
+      '\n'
+  );
+  assert.equal(
+    html(
+      String.raw`one\_two C:\a\_b \*x\* *em*E:\e\_f \*z\* x:\\y a:\&amp;`,
+      on
+    ),
+    String.raw`<p>one_two C:\a\_b *x* <em>em</em>E:\e\_f *z* x:\\y a:\&amp;amp;</p>` +
+      '\n'
+  );
+  // a word character before the letter, or another word, is no drive
+  assert.equal(
+    html(String.raw`ab:\_c C: \_d`, on),
+    String.raw`<p>ab:_c C: _d</p>` + '\n'
+  );
+  for (const space of [' ', '\t', '\u00a0', '\u2003', '\u202f', '\ufeff']) {
+    assert.equal(
+      html(String.raw`C:\me\_b${space}\*x\*`, on),
+      String.raw`<p>C:\me\_b${space}*x*</p>` + '\n'
+    );
+  }
+  assert.equal(
+    html(String.raw`C:\Users\me\.t3`),
+    String.raw`<p>C:\Users\me.t3</p>` + '\n'
+  );
+});

@@ -289,6 +289,59 @@
     (if (i32.ge_s (global.get $delimHead) (i32.const 0))
       (then (call $processEmphasis (i32.const 0) (i32.const -1)))))
 
+  ;; Whether the word before content offset $p, back to the last whitespace,
+  ;; ends in a drive path: /(?:^|\W)[A-Za-z]:(?:[\\/]\S*)?$/ (windowsPaths).
+  (func $driveWordBefore (param $p i32) (result i32)
+    (local $base i32)
+    (local $q i32)
+    (local $c i32)
+    (local $cp i32)
+    (local.set $base (global.get $contentBase))
+    (local.set $q (local.get $p))
+    (block $start
+      (loop $back
+        (br_if $start (i32.eqz (local.get $q)))
+        (local.set $c (i32.load8_u (i32.add (local.get $base) (i32.sub (local.get $q) (i32.const 1)))))
+        (if (i32.lt_u (local.get $c) (i32.const 0x80))
+          (then (br_if $start (call $isWhiteByte (local.get $c)))))
+        (if (i32.ge_u (local.get $c) (i32.const 0xc0))
+          (then
+            (local.set $cp (call $utf8At (i32.add (local.get $base) (i32.sub (local.get $q) (i32.const 1)))
+              (i32.add (local.get $base) (local.get $p))))
+            ;; JavaScript's \s also holds these
+            (if (i32.or (call $isWhiteCp (local.get $cp))
+                  (i32.or (i32.eq (local.get $cp) (i32.const 0xfeff))
+                    (i32.le_u (i32.sub (local.get $cp) (i32.const 0x2028)) (i32.const 1))))
+              (then
+                (local.set $q (i32.sub (global.get $utf8Next) (local.get $base)))
+                (br $start)))))
+        (local.set $q (i32.sub (local.get $q) (i32.const 1)))
+        (br $back)))
+    ;; $q is the word start; find a letter and colon not after a word character
+    (local.set $cp (local.get $q))
+    (block $none
+      (loop $find
+        (br_if $none (i32.ge_u (i32.add (local.get $q) (i32.const 1)) (local.get $p)))
+        (if (i32.and
+              (i32.and (call $isAlpha (i32.load8_u (i32.add (local.get $base) (local.get $q))))
+                (i32.eq (i32.load8_u offset=1 (i32.add (local.get $base) (local.get $q))) (i32.const ":")))
+              (i32.or (i32.eq (local.get $q) (local.get $cp))
+                (i32.eqz (call $isWordByte
+                  (i32.load8_u (i32.sub (i32.add (local.get $base) (local.get $q)) (i32.const 1)))))))
+          (then
+            (if (i32.eq (i32.add (local.get $q) (i32.const 2)) (local.get $p))
+              (then (return (i32.const 1))))
+            (local.set $c (i32.load8_u offset=2 (i32.add (local.get $base) (local.get $q))))
+            (if (i32.or (i32.eq (local.get $c) (i32.const "\5c")) (i32.eq (local.get $c) (i32.const "/")))
+              (then (return (i32.const 1))))))
+        (local.set $q (i32.add (local.get $q) (i32.const 1)))
+        (br $find)))
+    (i32.const 0))
+
+  ;; [A-Za-z0-9_]
+  (func $isWordByte (param $c i32) (result i32)
+    (i32.or (call $isAlnum (local.get $c)) (i32.eq (local.get $c) (i32.const "_"))))
+
   (func $handleBackslash (param $p i32) (param $end i32) (result i32)
     (local $c i32)
     (if (i32.lt_u (i32.add (local.get $p) (i32.const 1)) (local.get $end))
@@ -296,6 +349,14 @@
         (local.set $c (i32.load8_u offset=1 (i32.add (global.get $contentBase) (local.get $p))))
         (if (i32.or (call $isAsciiPunct (local.get $c)) (i32.eq (local.get $c) (i32.const 10)))
           (then
+            ;; In a drive path the escape keeps its backslash: both bytes are text.
+            (if (i32.and (i32.ne (local.get $c) (i32.const 10))
+                  (i32.ne (i32.and (global.get $ext) (i32.const 8)) (i32.const 0)))
+              (then
+                (if (call $driveWordBefore (local.get $p))
+                  (then
+                    (global.set $literalNeedsEscape (i32.const 1))
+                    (return (i32.add (local.get $p) (i32.const 2)))))))
             (drop (call $markNew
               (select (enum.get $Mk.hardbreak) (enum.get $Mk.escape)
                 (i32.eq (local.get $c) (i32.const 10)))

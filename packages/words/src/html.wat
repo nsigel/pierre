@@ -425,9 +425,23 @@
   ;; Write the link URL percent-encoded; $flags is as for $outHref. Its
   ;; reservation leaves 64 bytes for the attribute boundaries that follow.
   (func $htmlUrl (param $flags i32)
+    (local $p i32)
+    (local $c i32)
     (call $ensureOut (i32.add (i32.mul
       (i32.sub (global.get $linkUrlEnd) (global.get $linkUrlBeg)) (i32.const 9)) (i32.const 64)))
-    (call $outHref (i32.add (call $linkBase) (global.get $linkUrlBeg))
+    (local.set $p (i32.add (call $linkBase) (global.get $linkUrlBeg)))
+    ;; windowsPaths: every backslash of a drive path destination is literal
+    (if (i32.and (global.get $ext) (i32.const 8))
+      (then
+        (local.set $c (i32.load8_u offset=2 (local.get $p)))
+        (if (i32.and
+              (i32.and
+                (i32.ge_u (i32.sub (global.get $linkUrlEnd) (global.get $linkUrlBeg)) (i32.const 3))
+                (call $isAlpha (i32.load8_u (local.get $p))))
+              (i32.and (i32.eq (i32.load8_u offset=1 (local.get $p)) (i32.const ":"))
+                (i32.or (i32.eq (local.get $c) (i32.const "\5c")) (i32.eq (local.get $c) (i32.const "/")))))
+          (then (local.set $flags (i32.and (local.get $flags) (i32.const -3)))))))
+    (call $outHref (local.get $p)
       (i32.add (call $linkBase) (global.get $linkUrlEnd)) (local.get $flags)))
 
   ;; Write a link range as cleaned, escaped text; $flags is as for $outCleanText.
