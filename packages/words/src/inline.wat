@@ -47,6 +47,9 @@
     "extlink"    ;; a GFM extended autolink; data = 0 verbatim, 1 http://, 2 mailto:
     "footnote"   ;; a GFM footnote reference; data = the definition record
     "math"       ;; `$` or `$$` math; data = content begin, ch = dollar count
+    "diropen"    ;; `:name[` of a text directive; data = its dirclose mark
+    "dirclose"   ;; `]` and the attributes of a text directive
+    "directive"  ;; a text directive without a label
   )
 
   (const $T.em 1)
@@ -253,7 +256,9 @@
                 (local.set $p (if (result i32) (i32.eq
                       (i32.load16_u offset=1 (i32.add (local.get $base) (local.get $p))) (i32.const "//"))
                   (then (call $tryUrlAutolink (local.get $p) (local.get $end)))
-                  (else (i32.add (local.get $p) (i32.const 1)))))
+                  (else (if (result i32) (i32.and (global.get $ext) (i32.const 64))
+                    (then (call $handleColon (local.get $p) (local.get $end)))
+                    (else (i32.add (local.get $p) (i32.const 1)))))))
                 (br $dispatched)))
             ;; These bytes are literal text, but prevent copying unmarked gaps
             ;; without HTML escaping. Once that is required, stop finding them.
@@ -851,6 +856,59 @@
     (global.set $bracketSp (i32.add (global.get $bracketSp) (i32.const 1)))
     (local.get $end))
 
+  ;; A text directive at the colon at $p (directives, extension bit 6): a
+  ;; listed name, then a label, attributes, or neither. A label opens a
+  ;; bracket of kind 2, which links do not deactivate.
+  (func $handleColon (param $p i32) (param $end i32) (result i32)
+    (local $base i32)
+    (local $q i32)
+    (local $c i32)
+    (local $t i32)
+    (local $i i32)
+    (local $b i32)
+    (local.set $base (global.get $contentBase))
+    (if (local.get $p)
+      (then (if (i32.eq (i32.load8_u (i32.sub (i32.add (local.get $base) (local.get $p)) (i32.const 1)))
+            (i32.const ":"))
+        (then (return (i32.add (local.get $p) (i32.const 1)))))))
+    (local.set $q (i32.sub (call $dirNameEnd (i32.add (i32.add (local.get $base) (local.get $p)) (i32.const 1))
+      (i32.add (local.get $base) (local.get $end))) (local.get $base)))
+    (if (i32.eqz (call $directiveListed (i32.add (i32.add (local.get $base) (local.get $p)) (i32.const 1))
+          (i32.add (local.get $base) (local.get $q))))
+      (then (return (i32.add (local.get $p) (i32.const 1)))))
+    (local.set $c (select (i32.load8_u (i32.add (local.get $base) (local.get $q))) (i32.const 0)
+      (i32.lt_u (local.get $q) (local.get $end))))
+    (if (i32.eq (local.get $c) (i32.const "["))
+      (then
+        (if (call $labelClose (i32.add (local.get $base) (local.get $q)) (i32.add (local.get $base) (local.get $end)))
+          (then
+            (local.set $t (i32.add (local.get $q) (i32.const 1)))
+            (local.set $i (call $markNew (enum.get $Mk.bracket) (local.get $p) (local.get $t) (i32.const 0)))
+            (if (i32.eq (i32.sub (global.get $bracketSp) (global.get $bracketLo)) (i32.const 256))
+              (then (global.set $bracketLo (i32.add (global.get $bracketLo) (i32.const 1)))))
+            (if (global.get $bracketSp)
+              (then (i32.store8 offset=10
+                (call $bracketAt (i32.sub (global.get $bracketSp) (i32.const 1))) (i32.const 1))))
+            (local.set $b (call $bracketAt (global.get $bracketSp)))
+            (i32.store (local.get $b) (local.get $i))
+            (i32.store offset=4 (local.get $b) (global.get $delimTail))
+            (i32.store offset=8 (local.get $b) (i32.const 0x102))
+            (global.set $bracketSp (i32.add (global.get $bracketSp) (i32.const 1)))
+            (return (local.get $t))))))
+    (if (i32.eq (local.get $c) (i32.const "{"))
+      (then
+        (local.set $t (call $dirAttrs (i32.add (local.get $base) (local.get $q))
+          (i32.add (local.get $base) (local.get $end)) (i32.const 0)))
+        (if (local.get $t)
+          (then
+            (local.set $t (i32.sub (local.get $t) (local.get $base)))
+            (drop (call $markNew (enum.get $Mk.directive) (local.get $p) (local.get $t) (i32.const 0)))
+            (return (local.get $t))))))
+    ;; a name runs on into other letters
+    (if (i32.ge_u (local.get $c) (i32.const 0x80)) (then (return (i32.add (local.get $p) (i32.const 1)))))
+    (drop (call $markNew (enum.get $Mk.directive) (local.get $p) (local.get $q) (i32.const 0)))
+    (local.get $q))
+
   (func $handleCloseBracket (param $p i32) (param $end i32) (result i32)
     (local $base i32)
     (local $b i32)
@@ -887,6 +945,22 @@
       (local.set $bottom (i32.load offset=$M.end (call $slotAt (local.get $open))))
       (local.set $delimBottom (i32.load offset=4 (local.get $b)))
       (local.set $q (local.get $initial))
+      ;; a text directive's label ends here, with its attributes after it
+      (if (i32.eq (local.get $image) (i32.const 2))
+        (then
+          (if (i32.lt_u (local.get $q) (local.get $end))
+            (then
+              (local.set $t (call $dirAttrs (i32.add (global.get $contentBase) (local.get $q))
+                (i32.add (global.get $contentBase) (local.get $end)) (i32.const 0)))
+              (if (local.get $t)
+                (then (local.set $q (i32.sub (local.get $t) (global.get $contentBase)))))))
+          (local.set $n (call $markNew (enum.get $Mk.dirclose) (local.get $p) (local.get $q) (i32.const 0)))
+          (local.set $t (call $slotAt (local.get $open)))
+          (i32.store8 offset=$M.type (local.get $t) (enum.get $Mk.diropen))
+          (i32.store offset=$M.data (local.get $t) (local.get $n))
+          (call $processEmphasis (local.get $bottom) (local.get $delimBottom))
+          (global.set $bracketSp (i32.sub (global.get $bracketSp) (i32.const 1)))
+          (return (local.get $q))))
       ;; `[^label]` is a GFM footnote reference when the label is defined, even
       ;; before `(`. `![^label]` is an image first, and else `!` and a
       ;; reference. A label that holds a bracket matches no definition.

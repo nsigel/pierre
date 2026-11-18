@@ -184,3 +184,130 @@ void test('sourcePositions count from the start of a session', () => {
   const formatted = createHtmlRenderer(on).render(source, false).html;
   assert.deepEqual(spans(source, formatted), spans(source, last));
 });
+
+const attributes = (output: string): unknown[] =>
+  [...output.matchAll(/data-attributes="([^"]*)"/g)].map(([, value]) =>
+    JSON.parse(
+      value
+        .replaceAll('&quot;', '"')
+        .replaceAll('&lt;', '<')
+        .replaceAll('&gt;', '>')
+        .replaceAll('&amp;', '&')
+    )
+  );
+
+void test('directives renders the listed text and leaf directives', () => {
+  const on = {
+    directives: ['codex-file-citation', 'codex-followup', 'artifact-template'],
+  };
+  assert.equal(
+    html(
+      'See :codex-file-citation[**a** `b`]{path="/a/b.ts" line_start="3" line_end="5"} ' +
+        'and :codex-followup[Do it]{prompt="Run the tests"}.',
+      on
+    ),
+    '<p>See <span data-directive="codex-file-citation" data-attributes="' +
+      '{&quot;path&quot;:&quot;/a/b.ts&quot;,&quot;line_start&quot;:&quot;3&quot;,' +
+      '&quot;line_end&quot;:&quot;5&quot;}"><strong>a</strong> <code>b</code></span> ' +
+      'and <span data-directive="codex-followup" data-attributes="' +
+      '{&quot;prompt&quot;:&quot;Run the tests&quot;}">Do it</span>.</p>\n'
+  );
+  assert.equal(
+    html(
+      'para\n::artifact-template{name="x" kind="y"}  \n- ::artifact-template[*l*]',
+      on
+    ),
+    '<p>para</p>\n<div data-directive="artifact-template" data-attributes="' +
+      '{&quot;name&quot;:&quot;x&quot;,&quot;kind&quot;:&quot;y&quot;}"></div>\n' +
+      '<ul>\n<li>\n<div data-directive="artifact-template" data-attributes="{}">' +
+      '<em>l</em></div>\n</li>\n</ul>\n'
+  );
+  // unlisted names, other text after a leaf, and the option off stay text
+  for (const source of [
+    ':other[a] ::artifact-template',
+    '::artifact-template{name="x"} trailing',
+    'a::codex-followup 10:30',
+  ])
+    assert.equal(
+      html(source, on),
+      `<p>${source.replaceAll('"', '&quot;')}</p>\n`
+    );
+  assert.equal(
+    html(':codex-followup[a]{b="c"}'),
+    '<p>:codex-followup[a]{b=&quot;c&quot;}</p>\n'
+  );
+});
+
+void test('directives parse attributes and labels as remark-directive does', () => {
+  const on = { directives: ['x'] };
+  const output = html(
+    ':x :x{a=1 b} :x{ c = "2" } :x{q=\'it"s &amp; <b>\'} :x{n="d\ne\u0001"} :x{bad"} :x[open',
+    on
+  );
+  assert.deepEqual(attributes(output), [
+    {},
+    { a: '1', b: '' },
+    { c: '2' },
+    { q: 'it"s & <b>' },
+    { n: 'd\ne\u0001' },
+    {},
+    {},
+  ]);
+  assert.match(output, /<\/span>\{bad&quot;\} <span[^>]*><\/span>\[open<\/p>/);
+  // a label may hold brackets and links, but a name ends at a letter
+  assert.equal(
+    html(':x[[n] [l](u)] :xé', on),
+    '<p><span data-directive="x" data-attributes="{}">[n] <a href="u">l</a></span> :xé</p>\n'
+  );
+});
+
+void test('directives carry source positions and stream', () => {
+  const on = {
+    directives: ['codex-file-citation', 'artifact-template'],
+    sourcePositions: true,
+  };
+  const source =
+    'Intro :codex-file-citation[x]{path="/a"} :codex-file-citation\n\n' +
+    '::artifact-template{name="x"}\n\nend\n';
+  assert.deepEqual(spans(source, html(source, on)), [
+    'span :codex-file-citation[x]{path="/a"}',
+    'span :codex-file-citation',
+    'div ::artifact-template{name="x"}',
+  ]);
+  for (const incomplete of [false, true]) {
+    const session = createHtmlSession();
+    let last = '';
+    for (let i = 1; i <= source.length; i++)
+      last = session.render(source.slice(0, i), { ...on, incomplete }).html;
+    assert.equal(last, html(source, on));
+  }
+  assert.deepEqual(
+    spans(source, createHtmlRenderer(on).render(source, false).html),
+    spans(source, html(source, on))
+  );
+});
+
+void test('directive names share the id prefix room', () => {
+  const names = ['n'.repeat(200)];
+  assert.throws(
+    () =>
+      createHtmlRenderer({
+        idPrefix: 'p'.repeat(4000),
+        directives: names,
+      }).render(`:${names[0]}`, false),
+    RangeError
+  );
+  // the names change between renders, and a long prefix fits without them
+  assert.match(
+    html(`:${names[0]}`, { directives: names }),
+    /<span data-directive/
+  );
+  assert.equal(html(':n', { directives: ['m'] }), '<p>:n</p>\n');
+  assert.match(
+    createHtmlRenderer({ idPrefix: 'p'.repeat(4000) }).render(
+      '[^1]\n\n[^1]: x',
+      false
+    ).html,
+    /pppp/
+  );
+});

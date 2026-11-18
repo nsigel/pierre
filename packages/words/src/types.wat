@@ -38,6 +38,7 @@
     "table"     ;; data = column count, aux = previous table, extra = alignment bytes
     "linkdef"   ;; data/aux = destination; extra = title range, label length, label
     "footnote"  ;; container, data = assigned number; extra as for linkdef
+    "directive" ;; a leaf directive: one line, `::name[label]{attrs}`
   )
 
   ;; Warning: $F.math shares a bit with $F.task. Check the block type first:

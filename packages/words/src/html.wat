@@ -61,6 +61,10 @@
 
   (func $htmlLeaf (param $t i32) (param $r i32)
     (local $n i32)
+    (if (i32.eq (local.get $t) (enum.get $Blk.directive))
+      (then
+        (call $htmlLeafDirective (local.get $r))
+        (return)))
     (block $table
       (block $p
         (block $html
@@ -773,4 +777,353 @@
           (i32.eq (i32.load8_u (local.get $p)) (i32.const 9))))
         (br $back)))
     (call $outSourcePos (local.get $p) (local.get $q)))
+
+  ;; directives (extension bit 6)
+
+  ;; The end of a directive name at $p: a letter, then letters, digits, `-`
+  ;; and `_`. Returns $p when no name starts there.
+  (func $dirNameEnd (param $p i32) (param $e i32) (result i32)
+    (local $q i32)
+    (local $c i32)
+    (if (i32.ge_u (local.get $p) (local.get $e)) (then (return (local.get $p))))
+    (if (i32.eqz (call $isAlpha (i32.load8_u (local.get $p)))) (then (return (local.get $p))))
+    (local.set $q (i32.add (local.get $p) (i32.const 1)))
+    (block $done
+      (loop $l
+        (br_if $done (i32.ge_u (local.get $q) (local.get $e)))
+        (local.set $c (i32.load8_u (local.get $q)))
+        (br_if $done (i32.eqz (i32.or (call $isAlnum (local.get $c))
+          (i32.or (i32.eq (local.get $c) (i32.const "-")) (i32.eq (local.get $c) (i32.const "_"))))))
+        (local.set $q (i32.add (local.get $q) (i32.const 1)))
+        (br $l)))
+    (local.get $q))
+
+  ;; Whether [$p, $e) is one of the names the host wrote below $mem.idPrefixEnd.
+  (func $directiveListed (param $p i32) (param $e i32) (result i32)
+    (local $at i32)
+    (local $n i32)
+    (local $i i32)
+    (local.set $n (i32.sub (local.get $e) (local.get $p)))
+    (if (i32.eqz (local.get $n)) (then (return (i32.const 0))))
+    (local.set $at (i32.sub (i32.const $mem.idPrefixEnd) (i32.load16_u (i32.const 32))))
+    (block $none
+      (loop $names
+        (br_if $none (i32.ge_u (local.get $at) (i32.const $mem.idPrefixEnd)))
+        (if (i32.eq (i32.load8_u (local.get $at)) (local.get $n))
+          (then
+            (local.set $i (i32.const 0))
+            (block $differ
+              (loop $bytes
+                (if (i32.ge_u (local.get $i) (local.get $n)) (then (return (i32.const 1))))
+                (br_if $differ (i32.ne (i32.load8_u offset=1 (i32.add (local.get $at) (local.get $i)))
+                  (i32.load8_u (i32.add (local.get $p) (local.get $i)))))
+                (local.set $i (i32.add (local.get $i) (i32.const 1)))
+                (br $bytes)))))
+        (local.set $at (i32.add (local.get $at) (i32.add (i32.load8_u (local.get $at)) (i32.const 1))))
+        (br $names)))
+    (i32.const 0))
+
+  ;; The `]` that closes the label opened at $p, with balanced brackets and
+  ;; backslash escapes, or 0.
+  (func $labelClose (param $p i32) (param $e i32) (result i32)
+    (local $depth i32)
+    (local $c i32)
+    (block $none
+      (loop $l
+        (local.set $p (i32.add (local.get $p) (i32.const 1)))
+        (br_if $none (i32.ge_u (local.get $p) (local.get $e)))
+        (local.set $c (i32.load8_u (local.get $p)))
+        (if (i32.eq (local.get $c) (i32.const "\5c"))
+          (then
+            (local.set $p (i32.add (local.get $p) (i32.const 1)))
+            (br $l)))
+        (if (i32.eq (local.get $c) (i32.const "["))
+          (then (local.set $depth (i32.add (local.get $depth) (i32.const 1)))))
+        (if (i32.eq (local.get $c) (i32.const "]"))
+          (then
+            (if (i32.eqz (local.get $depth)) (then (return (local.get $p))))
+            (local.set $depth (i32.sub (local.get $depth) (i32.const 1)))))
+        (br $l)))
+    (i32.const 0))
+
+  ;; Write byte $c of a JSON string inside an HTML attribute, into reserved
+  ;; output.
+  (func $jsonByte (param $c i32)
+    (local $o i32)
+    (local.set $o (global.get $out))
+    (block $done
+      (if (i32.eq (local.get $c) (i32.const 34))
+        (then
+          (i32.store8 (local.get $o) (i32.const "\5c"))
+          (i64.store offset=1 (local.get $o) (i64.const "&quot;"))
+          (local.set $o (i32.add (local.get $o) (i32.const 7)))
+          (br $done)))
+      (if (i32.eq (local.get $c) (i32.const "\5c"))
+        (then
+          (i32.store16 (local.get $o) (i32.const "\5c\5c"))
+          (local.set $o (i32.add (local.get $o) (i32.const 2)))
+          (br $done)))
+      (if (i32.eq (local.get $c) (i32.const "&"))
+        (then
+          (i64.store (local.get $o) (i64.const "&amp;"))
+          (local.set $o (i32.add (local.get $o) (i32.const 5)))
+          (br $done)))
+      (if (i32.or (i32.eq (local.get $c) (i32.const "<")) (i32.eq (local.get $c) (i32.const ">")))
+        (then
+          (i32.store (local.get $o) (select (i32.const "&lt;") (i32.const "&gt;")
+            (i32.eq (local.get $c) (i32.const "<"))))
+          (local.set $o (i32.add (local.get $o) (i32.const 4)))
+          (br $done)))
+      (if (i32.lt_u (local.get $c) (i32.const 32))
+        (then
+          (if (i32.eq (local.get $c) (i32.const 10))
+            (then (i32.store16 (local.get $o) (i32.const "\5cn")) (local.set $o (i32.add (local.get $o) (i32.const 2))) (br $done)))
+          (if (i32.eq (local.get $c) (i32.const 13))
+            (then (i32.store16 (local.get $o) (i32.const "\5cr")) (local.set $o (i32.add (local.get $o) (i32.const 2))) (br $done)))
+          (if (i32.eq (local.get $c) (i32.const 9))
+            (then (i32.store16 (local.get $o) (i32.const "\5ct")) (local.set $o (i32.add (local.get $o) (i32.const 2))) (br $done)))
+          (i32.store (local.get $o) (i32.const "\5cu00"))
+          (i32.store8 offset=4 (local.get $o) (i32.add (i32.const "0") (i32.shr_u (local.get $c) (i32.const 4))))
+          (i32.store8 offset=5 (local.get $o) (i32.add (i32.and (local.get $c) (i32.const 15))
+            (select (i32.const 87) (i32.const 48) (i32.ge_u (i32.and (local.get $c) (i32.const 15)) (i32.const 10)))))
+          (local.set $o (i32.add (local.get $o) (i32.const 6)))
+          (br $done)))
+      (i32.store8 (local.get $o) (local.get $c))
+      (local.set $o (i32.add (local.get $o) (i32.const 1))))
+    (global.set $out (local.get $o)))
+
+  ;; Write [$p, $e) as JSON string bytes, decoding entity references when
+  ;; $entities is set.
+  (func $jsonText (param $p i32) (param $e i32) (param $entities i32)
+    (local $n i32)
+    (local $v i32)
+    (local $ve i32)
+    (block $done
+      (loop $l
+        (br_if $done (i32.ge_u (local.get $p) (local.get $e)))
+        (if (i32.and (local.get $entities) (i32.eq (i32.load8_u (local.get $p)) (i32.const "&")))
+          (then
+            (local.set $n (call $entityMatch (local.get $p) (local.get $e)))
+            (if (local.get $n)
+              (then
+                (local.set $v (global.get $entVal))
+                (local.set $ve (i32.add (local.get $v) (global.get $entLen)))
+                (loop $value
+                  (if (i32.lt_u (local.get $v) (local.get $ve))
+                    (then
+                      (call $jsonByte (i32.load8_u (local.get $v)))
+                      (local.set $v (i32.add (local.get $v) (i32.const 1)))
+                      (br $value))))
+                (local.set $p (i32.add (local.get $p) (local.get $n)))
+                (br $l)))))
+        (call $jsonByte (i32.load8_u (local.get $p)))
+        (local.set $p (i32.add (local.get $p) (i32.const 1)))
+        (br $l))))
+
+  (func $isAttrSpace (param $c i32) (result i32)
+    (i32.or (call $isSpaceByte (local.get $c))
+      (i32.or (i32.eq (local.get $c) (i32.const 10)) (i32.eq (local.get $c) (i32.const 13)))))
+
+  ;; Attributes `{a="x" b='y' c=z bare}` at $p, before $e: returns the end
+  ;; past `}`, or 0. With $write, writes them as an escaped JSON object into
+  ;; reserved output.
+  (func $dirAttrs (param $p i32) (param $e i32) (param $write i32) (result i32)
+    (local $c i32)
+    (local $k i32)
+    (local $v i32)
+    (local $q i32)
+    (local $first i32)
+    (if (i32.ge_u (local.get $p) (local.get $e)) (then (return (i32.const 0))))
+    (if (i32.ne (i32.load8_u (local.get $p)) (i32.const "{")) (then (return (i32.const 0))))
+    (if (local.get $write) (then (call $outByte (i32.const "{"))))
+    (local.set $first (i32.const 1))
+    (local.set $p (i32.add (local.get $p) (i32.const 1)))
+    (block $fail
+      (loop $attr
+        (loop $space
+          (br_if $fail (i32.ge_u (local.get $p) (local.get $e)))
+          (if (call $isAttrSpace (i32.load8_u (local.get $p)))
+            (then
+              (local.set $p (i32.add (local.get $p) (i32.const 1)))
+              (br $space))))
+        (local.set $c (i32.load8_u (local.get $p)))
+        (if (i32.eq (local.get $c) (i32.const "}"))
+          (then
+            (if (local.get $write) (then (call $outByte (i32.const "}"))))
+            (return (i32.add (local.get $p) (i32.const 1)))))
+        ;; the key
+        (br_if $fail (i32.eqz (i32.or (call $isAlpha (local.get $c))
+          (i32.or (i32.eq (local.get $c) (i32.const "_")) (i32.eq (local.get $c) (i32.const ":"))))))
+        (local.set $k (local.get $p))
+        (block $keyEnd
+          (loop $key
+            (local.set $p (i32.add (local.get $p) (i32.const 1)))
+            (br_if $keyEnd (i32.ge_u (local.get $p) (local.get $e)))
+            (local.set $c (i32.load8_u (local.get $p)))
+            (br_if $key (i32.or (call $isAlnum (local.get $c))
+              (i32.or (i32.or (i32.eq (local.get $c) (i32.const "_")) (i32.eq (local.get $c) (i32.const ":")))
+                (i32.or (i32.eq (local.get $c) (i32.const ".")) (i32.eq (local.get $c) (i32.const "-"))))))))
+        (if (local.get $write)
+          (then
+            (if (i32.eqz (local.get $first)) (then (call $outByte (i32.const ","))))
+            (out.str "&quot;")
+            (call $jsonText (local.get $k) (local.get $p) (i32.const 0))
+            (out.str "&quot;:&quot;")))
+        (local.set $first (i32.const 0))
+        ;; an optional value
+        (local.set $q (call $skipSpace (local.get $p) (local.get $e)))
+        (if (i32.and (i32.lt_u (local.get $q) (local.get $e))
+              (i32.eq (i32.load8_u (local.get $q)) (i32.const "=")))
+          (then
+            (local.set $p (call $skipSpace (i32.add (local.get $q) (i32.const 1)) (local.get $e)))
+            (br_if $fail (i32.ge_u (local.get $p) (local.get $e)))
+            (local.set $c (i32.load8_u (local.get $p)))
+            (if (i32.or (i32.eq (local.get $c) (i32.const 34)) (i32.eq (local.get $c) (i32.const "'")))
+              (then
+                (local.set $v (i32.add (local.get $p) (i32.const 1)))
+                (local.set $p (local.get $v))
+                (loop $quoted
+                  (br_if $fail (i32.ge_u (local.get $p) (local.get $e)))
+                  (if (i32.ne (i32.load8_u (local.get $p)) (local.get $c))
+                    (then
+                      (local.set $p (i32.add (local.get $p) (i32.const 1)))
+                      (br $quoted))))
+                (if (local.get $write) (then (call $jsonText (local.get $v) (local.get $p) (i32.const 1))))
+                (local.set $p (i32.add (local.get $p) (i32.const 1))))
+              (else
+                (local.set $v (local.get $p))
+                (block $valueEnd
+                  (loop $bare
+                    (br_if $valueEnd (i32.ge_u (local.get $p) (local.get $e)))
+                    (local.set $c (i32.load8_u (local.get $p)))
+                    (br_if $valueEnd (i32.or (call $isAttrSpace (local.get $c))
+                      (i32.or (i32.or (i32.eq (local.get $c) (i32.const 34)) (i32.eq (local.get $c) (i32.const "'")))
+                        (i32.or (i32.or (i32.eq (local.get $c) (i32.const "=")) (i32.eq (local.get $c) (i32.const "<")))
+                          (i32.or (i32.or (i32.eq (local.get $c) (i32.const ">")) (i32.eq (local.get $c) (i32.const "\60")))
+                            (i32.eq (local.get $c) (i32.const "}")))))))
+                    (local.set $p (i32.add (local.get $p) (i32.const 1)))
+                    (br $bare)))
+                (br_if $fail (i32.eq (local.get $p) (local.get $v)))
+                (if (local.get $write) (then (call $jsonText (local.get $v) (local.get $p) (i32.const 1))))))))
+        (if (local.get $write) (then (out.str "&quot;")))
+        ;; attributes are separated by whitespace
+        (br_if $fail (i32.ge_u (local.get $p) (local.get $e)))
+        (local.set $c (i32.load8_u (local.get $p)))
+        (br_if $fail (i32.eqz (i32.or (call $isAttrSpace (local.get $c)) (i32.eq (local.get $c) (i32.const "}")))))
+        (br $attr)))
+    (i32.const 0))
+
+  ;; `::name[label]{attrs}` alone on the line [$p, $e): the end of the
+  ;; directive before trailing space, or 0.
+  (func $scanLeafDirective (param $p i32) (param $e i32) (result i32)
+    (local $q i32)
+    (local $t i32)
+    (if (i32.ne (i32.load8_u offset=1 (local.get $p)) (i32.const ":")) (then (return (i32.const 0))))
+    (local.set $q (call $dirNameEnd (i32.add (local.get $p) (i32.const 2)) (local.get $e)))
+    (if (i32.eqz (call $directiveListed (i32.add (local.get $p) (i32.const 2)) (local.get $q)))
+      (then (return (i32.const 0))))
+    (if (i32.and (i32.lt_u (local.get $q) (local.get $e)) (i32.eq (i32.load8_u (local.get $q)) (i32.const "[")))
+      (then
+        (local.set $t (call $labelClose (local.get $q) (local.get $e)))
+        (if (i32.eqz (local.get $t)) (then (return (i32.const 0))))
+        (local.set $q (i32.add (local.get $t) (i32.const 1)))))
+    (if (i32.and (i32.lt_u (local.get $q) (local.get $e)) (i32.eq (i32.load8_u (local.get $q)) (i32.const "{")))
+      (then
+        (local.set $q (call $dirAttrs (local.get $q) (local.get $e) (i32.const 0)))
+        (if (i32.eqz (local.get $q)) (then (return (i32.const 0))))))
+    (if (i32.lt_u (call $skipSpace (local.get $q) (local.get $e)) (local.get $e)) (then (return (i32.const 0))))
+    (local.get $q))
+
+  ;; Open a directive element: `<span` or `<div` with data-directive (the
+  ;; name in [$nameB, $nameE)), data-attributes (attributes at $attrB, or
+  ;; none when 0), and a source position. Leaf ranges are absolute; text
+  ;; ranges are content offsets, resolved after reserving output.
+  (func $htmlDirectiveOpen (param $div i32) (param $nameB i32) (param $nameE i32)
+      (param $attrB i32) (param $attrE i32) (param $spB i32) (param $spE i32)
+    (local $base i32)
+    (if (i32.eqz (local.get $div))
+      (then
+        (local.set $spB (call $srcOffset (local.get $spB)))
+        (local.set $spE (call $srcOffset (local.get $spE)))))
+    (call $ensureOut (i32.add (i32.add (i32.sub (local.get $nameE) (local.get $nameB))
+      (i32.mul (select (i32.sub (local.get $attrE) (local.get $attrB)) (i32.const 0) (local.get $attrB))
+        (i32.const 8))) (i32.const 160)))
+    (local.set $base (select (i32.const 0) (global.get $contentBase) (local.get $div)))
+    (if (local.get $div)
+      (then (out.str "<div data-directive=\22"))
+      (else (out.str "<span data-directive=\22")))
+    (call $outCopy (i32.add (local.get $base) (local.get $nameB)) (i32.add (local.get $base) (local.get $nameE)))
+    (out.str "\22 data-attributes=\22")
+    (if (local.get $attrB)
+      (then (drop (call $dirAttrs (i32.add (local.get $base) (local.get $attrB))
+        (i32.add (local.get $base) (local.get $attrE)) (i32.const 1))))
+      (else (out.str "{}")))
+    (call $outByte (i32.const 34))
+    (if (i32.and (global.get $ext) (i32.const 32))
+      (then (call $outSourcePos (local.get $spB) (local.get $spE))))
+    (call $outByte (i32.const ">")))
+
+  ;; A text directive mark: its opener, its closer, or one without a label.
+  ;; Alt text keeps only the label.
+  (func $renderDirectiveMark (param $m i32) (param $t i32) (param $b i32) (param $e i32)
+    (local $close i32)
+    (local $q i32)
+    (if (i32.or (global.get $mode) (global.get $plain)) (then (return)))
+    (if (i32.eq (local.get $t) (enum.get $Mk.dirclose))
+      (then (out.str "</span>") (return)))
+    (if (i32.eq (local.get $t) (enum.get $Mk.diropen))
+      (then
+        (local.set $close (call $slotAt (i32.load offset=$M.data (local.get $m))))
+        (local.set $q (i32.add (i32.load offset=$M.beg (local.get $close)) (i32.const 1)))
+        (call $htmlDirectiveOpen (i32.const 0)
+          (i32.add (local.get $b) (i32.const 1)) (i32.sub (local.get $e) (i32.const 1))
+          (select (local.get $q) (i32.const 0)
+            (i32.lt_u (local.get $q) (i32.load offset=$M.end (local.get $close))))
+          (i32.load offset=$M.end (local.get $close))
+          (local.get $b) (i32.load offset=$M.end (local.get $close)))
+        (return)))
+    (local.set $q (i32.sub (call $dirNameEnd
+      (i32.add (global.get $contentBase) (i32.add (local.get $b) (i32.const 1)))
+      (i32.add (global.get $contentBase) (local.get $e))) (global.get $contentBase)))
+    (call $htmlDirectiveOpen (i32.const 0) (i32.add (local.get $b) (i32.const 1)) (local.get $q)
+      (select (local.get $q) (i32.const 0) (i32.lt_u (local.get $q) (local.get $e)))
+      (local.get $e) (local.get $b) (local.get $e))
+    (out.str "</span>"))
+
+  ;; A leaf directive record: its label renders as inline content.
+  (func $htmlLeafDirective (param $r i32)
+    (local $p i32)
+    (local $e i32)
+    (local $q i32)
+    (local $lb i32)
+    (local $le i32)
+    (local $line i32)
+    (local.set $line (call $lineAt (local.get $r) (i32.const 0)))
+    (local.set $p (call $lineBeg (local.get $line)))
+    (local.set $e (call $lineEndOf (local.get $line)))
+    (local.set $q (call $dirNameEnd (i32.add (local.get $p) (i32.const 2)) (local.get $e)))
+    (local.set $lb (local.get $q))
+    (local.set $le (local.get $q))
+    (if (i32.and (i32.lt_u (local.get $q) (local.get $e)) (i32.eq (i32.load8_u (local.get $q)) (i32.const "[")))
+      (then
+        (local.set $lb (i32.add (local.get $q) (i32.const 1)))
+        (local.set $le (call $labelClose (local.get $q) (local.get $e)))
+        (local.set $q (i32.add (local.get $le) (i32.const 1)))))
+    (call $cr)
+    (call $htmlDirectiveOpen (i32.const 1) (i32.add (local.get $p) (i32.const 2))
+      (call $dirNameEnd (i32.add (local.get $p) (i32.const 2)) (local.get $e))
+      (select (local.get $q) (i32.const 0) (i32.lt_u (local.get $q) (local.get $e)))
+      (local.get $e) (local.get $p) (local.get $e))
+    (if (i32.gt_u (local.get $le) (local.get $lb))
+      (then
+        (global.set $scratchUsed (i32.const 0))
+        (global.set $scratchTailUsed (i32.const 0))
+        (global.set $contentBase (local.get $lb))
+        (global.set $contentLen (i32.sub (local.get $le) (local.get $lb)))
+        (global.set $contentInputEnd (local.get $le))
+        (global.set $contentRec (local.get $r))
+        (global.set $singleLineContent (i32.const 1))
+        (call $inlineScan)
+        (call $walkInlines)))
+    (out.str "</div>\n"))
 )

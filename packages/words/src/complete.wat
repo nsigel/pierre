@@ -71,7 +71,9 @@
     (local.set $type (i32.load8_u (local.get $r)))
     (local.set $n (i32.load offset=$R.nLines (local.get $r)))
     ;; A paragraph proved literal holds no syntax to repair.
-    (if (i32.or (i32.or (i32.eqz (local.get $n)) (i32.eq (local.get $type) (enum.get $Blk.code)))
+    (if (i32.or (i32.or (i32.eqz (local.get $n))
+            (i32.or (i32.eq (local.get $type) (enum.get $Blk.code))
+              (i32.eq (local.get $type) (enum.get $Blk.directive))))
           (i32.and (i32.load8_u offset=1 (local.get $r)) (i32.const $F.plainInline)))
       (then (return (i32.const 0))))
     (local.set $line (call $lineAt (local.get $r) (i32.sub (local.get $n) (i32.const 1))))

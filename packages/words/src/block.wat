@@ -990,6 +990,29 @@
              (local.set $maybeLazy (i32.const 0))
              (br $try))))
 
+        ;; a leaf directive (directives, extension bit 6)
+        (if (i32.and (i32.ne (i32.and (global.get $ext) (i32.const 64)) (i32.const 0))
+              (i32.eq (i32.load8_u (global.get $fns)) (i32.const ":")))
+          (then
+            (local.set $m (call $scanLeafDirective (global.get $fns) (global.get $lineEnd)))
+            (if (local.get $m)
+              (then
+                (call $closeUnmatched (i32.const 1))
+                (call $prepareLeafParent)
+                (local.set $save (call $recNew (enum.get $Blk.directive)))
+                (call $noteChildAdded)
+                (if (i32.gt_u (i32.add (global.get $rec) (i32.const $R.line)) (global.get $outCap))
+                  (then (call $ensureRec (i32.const $R.line))))
+                (i64.store (global.get $rec) (i64.or (i64.extend_i32_u (global.get $fns))
+                  (i64.shl (i64.extend_i32_u (local.get $m)) (i64.const 32))))
+                (global.set $rec (i32.add (global.get $rec) (i32.const $R.line)))
+                (i32.store offset=$R.nLines (local.get $save) (i32.const 1))
+                (call $recGrow (local.get $save) (i32.const $R.line))
+                (global.set $pos (global.get $lineEnd))
+                (global.set $curLevel (global.get $sp))
+                (global.set $skipLine (i32.const 1))
+                (br $stop)))))
+
         ;; GFM table, tried after the core block starts as cmark-gfm does, so
         ;; `- | -` is a list item
         (br_if $stop (i32.ne (local.get $contType) (enum.get $Blk.p)))

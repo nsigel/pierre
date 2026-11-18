@@ -366,6 +366,10 @@
     (local.set $t (i32.load8_u offset=$M.type (local.get $m)))
     (local.set $b (i32.load offset=$M.beg (local.get $m)))
     (local.set $e (i32.load offset=$M.end (local.get $m)))
+    (if (i32.ge_u (local.get $t) (enum.get $Mk.diropen))
+      (then
+        (call $renderDirectiveMark (local.get $m) (local.get $t) (local.get $b) (local.get $e))
+        (return)))
     (block $emph
      (block $text
       (block $footnote
