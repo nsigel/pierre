@@ -228,8 +228,12 @@
         (br_if $done (i32.ge_u (local.get $i) (local.get $n)))
         (local.set $line (call $lineAt (local.get $r) (local.get $i)))
         (call $outSpaces (call $linePad (local.get $line)))
-        (call $htmlFiltered2 (call $lineBeg (local.get $line)) (call $lineEndOf (local.get $line))
-          (i32.const 1))
+        ;; escapeHtml: raw HTML is text. Lines are input-backed, so $outText may grow output.
+        (if (i32.and (global.get $ext) (i32.const 128))
+          (then (call $outText (call $lineBeg (local.get $line)) (call $lineEndOf (local.get $line))))
+          (else
+            (call $htmlFiltered2 (call $lineBeg (local.get $line)) (call $lineEndOf (local.get $line))
+              (i32.const 1))))
         (call $outByte (i32.const 10))
         (local.set $i (i32.add (local.get $i) (i32.const 1)))
         (br $l))))
@@ -242,6 +246,9 @@
     (local $tagEnd i32)
     ;; structured React output drops raw HTML
     (if (i32.and (i32.load8_u (i32.const 1)) (i32.const 2)) (then (return)))
+    ;; escapeHtml: raw HTML is text. The caller reserved six bytes per input byte.
+    (if (i32.and (global.get $ext) (i32.const 128))
+      (then (call $outTextReserved (local.get $p) (local.get $e)) (return)))
     (block $done
       (loop $l
         (br_if $done (i32.ge_u (local.get $p) (local.get $e)))

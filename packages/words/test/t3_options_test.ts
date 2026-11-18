@@ -311,3 +311,18 @@ void test('directive names share the id prefix room', () => {
     /pppp/
   );
 });
+
+void test('escapeHtml writes raw HTML as escaped text', () => {
+  const on = { escapeHtml: true };
+  assert.equal(
+    html('a <b>x</b> & <img src=y onerror=z> `<i>`', on),
+    '<p>a &lt;b&gt;x&lt;/b&gt; &amp; &lt;img src=y onerror=z&gt; <code>&lt;i&gt;</code></p>\n'
+  );
+  assert.equal(
+    html('<details>\n<summary>s</summary>\n\n**md**\n</details>', on),
+    '&lt;details&gt;\n&lt;summary&gt;s&lt;/summary&gt;\n<p><strong>md</strong></p>\n&lt;/details&gt;\n'
+  );
+  // autolinks are not raw HTML
+  assert.equal(html('<https://a.dev>', on), '<p><a href="https://a.dev">https://a.dev</a></p>\n');
+  assert.equal(html('a <b>x</b>'), '<p>a <b>x</b></p>\n');
+});

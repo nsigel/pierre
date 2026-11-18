@@ -52,7 +52,8 @@ function extensionFlags(options: Options | undefined): number {
     (options?.singleTilde === false ? 4 : 0) |
     (options?.windowsPaths === true ? 8 : 0) |
     (options?.codeMeta === true ? 16 : 0) |
-    (options?.sourcePositions === true ? 32 : 0)
+    (options?.sourcePositions === true ? 32 : 0) |
+    (options?.escapeHtml === true ? 128 : 0)
   );
 }
 
@@ -558,6 +559,7 @@ export function createHtmlSession(): {
         windowsPaths: (ext & 8) !== 0,
         codeMeta: (ext & 16) !== 0,
         sourcePositions: (ext & 32) !== 0,
+        escapeHtml: (ext & 128) !== 0,
         directives: options?.directives,
         sourceOffset: nextOffsetBytes,
         boundary: true,

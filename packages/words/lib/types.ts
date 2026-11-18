@@ -62,6 +62,8 @@ export interface HtmlSessionOptions {
    * an exclusive end, to list items, links, images, and directives.
    */
   sourcePositions?: boolean;
+  /** Write raw HTML as escaped text, as remark-rehype without rehype-raw shows it. */
+  escapeHtml?: boolean;
   /**
    * Names of the remark-directive text (`:name[label]{attrs}`) and leaf
    * (`::name[label]{attrs}`) directives to render, as

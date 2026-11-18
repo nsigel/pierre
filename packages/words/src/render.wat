@@ -466,8 +466,9 @@
             ;; raw HTML: dropped in ANSI, literal text in alt text
             (br_if $text (global.get $plain))
             (if (global.get $mode) (then (return)))
+            ;; six bytes per byte, as escapeHtml escapes it all
             (call $ensureOut (i32.add
-              (i32.mul (i32.sub (local.get $e) (local.get $b)) (i32.const 4)) (i32.const 64)))
+              (i32.mul (i32.sub (local.get $e) (local.get $b)) (i32.const 6)) (i32.const 64)))
             (call $htmlFiltered2
               (call $contentAt (local.get $b))
               (call $contentAt (local.get $e)) (i32.const 0))
