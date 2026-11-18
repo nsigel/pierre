@@ -65,6 +65,14 @@ export interface HtmlSessionOptions {
   /** Write raw HTML as escaped text, as remark-rehype without rehype-raw shows it. */
   escapeHtml?: boolean;
   /**
+   * Keep the spaces and tabs typed at the start of each line of a paragraph
+   * past its block quote markers and list item indentation, which CommonMark
+   * drops, as `<span data-leading-whitespace="">` before the line's content.
+   * `indent` is how many columns every line is already indented, as for
+   * content cut out of an over-indented list item.
+   */
+  leadingWhitespace?: boolean | { readonly indent: number };
+  /**
    * Names of the remark-directive text (`:name[label]{attrs}`) and leaf
    * (`::name[label]{attrs}`) directives to render, as
    * `<span>`/`<div data-directive="name" data-attributes="{JSON}">`.

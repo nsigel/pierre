@@ -376,7 +376,7 @@
     ;; HTML copies a plain soft break verbatim, so it needs no mark unless a side
     ;; needs trimming, a bracket is open (alt text turns newlines into spaces),
     ;; or the output is ANSI.
-    (if (i32.eqz (i32.or (global.get $mode) (global.get $bracketSp)))
+    (if (i32.eqz (i32.or (i32.or (global.get $mode) (global.get $bracketSp)) (global.get $lwActive)))
       (then
         (if (i32.eqz (i32.or (i32.eqz (local.get $p))
               (i32.or

@@ -44,16 +44,26 @@ const idPrefixAt = 61440;
 const idPrefixRoom = 4096;
 const directiveName = /^[A-Za-z][A-Za-z0-9_-]{0,254}$/;
 
-/** Control byte 31: the parser extensions an option set turns on. */
+/**
+ * The parser extensions an option set turns on: control byte 31 in the low
+ * byte, and leadingWhitespace's control bytes 34-35 above it.
+ */
 function extensionFlags(options: Options | undefined): number {
+  const lw = options?.leadingWhitespace;
   return (
+    (lw === true
+      ? 1 << 8
+      : typeof lw === 'object'
+        ? (1 + Math.min(Math.max(Math.trunc(lw.indent) || 0, 0), 65534)) * 256
+        : 0) +
+    (
     (options?.cjk === true ? 1 : 0) |
     (options?.math === true ? 2 : 0) |
     (options?.singleTilde === false ? 4 : 0) |
     (options?.windowsPaths === true ? 8 : 0) |
     (options?.codeMeta === true ? 16 : 0) |
     (options?.sourcePositions === true ? 32 : 0) |
-    (options?.escapeHtml === true ? 128 : 0)
+    (options?.escapeHtml === true ? 128 : 0))
   );
 }
 
@@ -237,10 +247,9 @@ class Renderer {
       this.directivesLength = length;
     }
     this.dv.setUint16(32, this.directivesLength, true);
-    this.dv.setUint8(
-      31,
-      extensionFlags(options) | (this.directivesLength === 0 ? 0 : 64)
-    );
+    const ext = extensionFlags(options);
+    this.dv.setUint8(31, (ext & 255) | (this.directivesLength === 0 ? 0 : 64));
+    this.dv.setUint16(34, ext >>> 8, true);
     this.dv.setUint32(44, options?.sourceOffset ?? 0, true);
     this.dv.setUint32(2, inputLength, true);
     const format = options?.format;
@@ -560,6 +569,7 @@ export function createHtmlSession(): {
         codeMeta: (ext & 16) !== 0,
         sourcePositions: (ext & 32) !== 0,
         escapeHtml: (ext & 128) !== 0,
+        leadingWhitespace: ext < 256 ? false : { indent: (ext >>> 8) - 1 },
         directives: options?.directives,
         sourceOffset: nextOffsetBytes,
         boundary: true,

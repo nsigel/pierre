@@ -10,6 +10,7 @@
   (import "./inline.wat")
   (import "./html.wat")
   (import "./ansi.wat")
+  (import "./leading.wat")
 
   (global $mode (mut i32) (i32.const 0))   ;; 0 = html, 1 = ansi
   (global $wrap (mut i32) (i32.const 0))   ;; ansi wrap width, 0 = none
@@ -38,6 +39,9 @@
     (global.set $plain (i32.const 0))
     (global.set $pendingTask (i32.const 0))
     (global.set $fnSkip (i32.const 0))
+    (global.set $lwActive (i32.and (i32.ne (global.get $lw) (i32.const 0)) (i32.eqz (global.get $mode))))
+    (global.set $lwRec (i32.const 0))
+    (global.set $lwOpener (i32.const 0))
     (if (global.get $mode)
       (then
         (global.set $prefixLen (i32.const 0))
@@ -82,6 +86,8 @@
     (local $depth i32)
     (local $t i32)
     (if (i32.eqz (global.get $fnUsed)) (then (return)))
+    ;; footnote definitions keep CommonMark's reading
+    (global.set $lwActive (i32.const 0))
     (if (global.get $mode) (then (call $ansiFootnotesOpen)) (else (call $htmlFootnotesOpen)))
     (block $done
       (loop $l
@@ -147,6 +153,7 @@
       (then
         (if (i32.lt_u (global.get $rsp) (i32.const $Nest))
           (then
+            (if (global.get $lwActive) (then (call $lwPush (global.get $rsp) (local.get $r))))
             (i32.store16 (call $rsAt (global.get $rsp)) (i32.or (local.get $t)
               (i32.shl (i32.eqz (i32.and (local.get $flags) (i32.const $F.loose))) (i32.const 8))))
             (global.set $rsp (i32.add (global.get $rsp) (i32.const 1)))))
@@ -170,6 +177,10 @@
           (i32.ne (i32.and (i32.load8_u offset=1 (local.get $r))
             (i32.const $F.plainInline)) (i32.const 0)))
       (then
+        (if (global.get $lwActive)
+          (then
+            (call $lwParagraph (local.get $r) (i32.const 1))
+            (global.set $lwRec (i32.const 0))))
         (call $ensureOut (global.get $contentLen))
         (global.set $out (call $copyAt (global.get $out) (global.get $contentBase)
           (global.get $contentLen)))
@@ -180,6 +191,12 @@
       (i32.eqz (i32.and (i32.load8_u offset=1 (local.get $r))
         (i32.const $F.joinedLines)))))
     (call $inlineScan)
+    (if (global.get $lwActive)
+      (then
+        (call $lwParagraph (local.get $r) (i32.const 0))
+        (call $walkInlines)
+        (global.set $lwRec (i32.const 0))
+        (return)))
     (call $walkInlines))
 
   ;; Write an emphasis tag (kind 1 em, 2 strong, 3 del) into reserved output,
@@ -427,6 +444,9 @@
                               (br $spaceScan)))
                           (local.set $q (i32.add (local.get $q) (i32.const 1)))
                           (br $spaces)))))))
+              ;; leadingWhitespace trims a code span that starts a line
+              (if (i32.load offset=$M.rem (local.get $m))
+                (then (local.set $b (call $lwTrimCode (local.get $b) (local.get $e)))))
               (if (i32.eqz (i32.or (global.get $mode) (global.get $plain)))
                 (then
                   (call $htmlCodeSpan (local.get $b) (local.get $e))
@@ -479,7 +499,11 @@
                (if (i32.or (global.get $plain) (global.get $wrap))
                  (then (call $ansiSpace))
                  (else (call $ansiEol))))
-             (else (call $outByte (select (i32.const 32) (i32.const 10) (global.get $plain)))))
+             (else
+               (call $outByte (select (i32.const 32) (i32.const 10) (global.get $plain)))
+               (if (i32.and (i32.load8_u offset=$M.flags (local.get $m)) (i32.const 64))
+                 (then (if (i32.eqz (global.get $plain))
+                   (then (call $lwBreak (i32.load offset=$M.data (local.get $m)))))))))
            (return))
           ;; hard break
           (if (global.get $mode)
@@ -491,7 +515,9 @@
                 (else
                   (if (global.get $fmt)
                     (then (out.str "<br data-markdown=\22br\22>\n"))
-                    (else (out.str "<br />\n")))))))
+                    (else (out.str "<br />\n")))
+                  (if (i32.and (i32.load8_u offset=$M.flags (local.get $m)) (i32.const 64))
+                    (then (call $lwBreak (i32.load offset=$M.data (local.get $m)))))))))
           (return))
          ;; link opener: an image's label becomes plain alt text
          (local.set $close (i32.load offset=$M.data (local.get $m)))

@@ -57,6 +57,7 @@
     (global.set $mode (i32.load8_u (i32.const 0)))
     (global.set $fmt (i32.load8_u (i32.const 26)))
     (global.set $ext (i32.load8_u (i32.const 31)))
+    (global.set $lw (i32.load16_u (i32.const 34)))
     ;; with the math option the scan tables mark `$` (low nibble 4, class 2),
     ;; and `$` (bit 4 of byte 4) may start a block
     (local.set $start (i32.and (global.get $ext) (i32.const 2)))

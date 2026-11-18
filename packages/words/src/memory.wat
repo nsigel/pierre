@@ -24,9 +24,11 @@
       [31]            extension flags (u8): bit 0 = CJK-friendly emphasis,
                       bit 1 = math, bit 2 = no single-tilde strikethrough,
                       bit 3 = Windows paths, bit 4 = code meta, bit 5 = source
-                      positions, bit 6 = directives
+                      positions, bit 6 = directives, bit 7 = escape raw HTML
       [32:34)         byte length of the directive names that end at
                       $mem.idPrefixEnd (u16 LE): [length u8][name] entries
+      [34:36)         leading whitespace (u16 LE, see leading.wat): 0 = off,
+                      otherwise 1 + the columns each line is already indented
       [36:40)         UTF-16 length of the input before the boundary (option bit 3)
       [40:44)         UTF-16 length of the output before the boundary (option bit 3)
       [44:48)         UTF-8 bytes before the input, added to source positions
@@ -103,6 +105,9 @@
   (const $mem.completeDelims $mem.bracket)
   (const $mem.completeLinks $mem.completeDelims+1024)
   (const $mem.column $mem.containerEnd)
+  ;; HTML render only, while the ANSI state below is idle: 8 bytes per render
+  ;; level for the leadingWhitespace option (see leading.wat)
+  (const $mem.lwChain $mem.column)
   (const $mem.columnEnd $mem.column+2048)
   (const $mem.prefix $mem.columnEnd)
   (const $mem.prefixEnd $mem.prefix+1024)

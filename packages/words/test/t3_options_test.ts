@@ -326,3 +326,65 @@ void test('escapeHtml writes raw HTML as escaped text', () => {
   assert.equal(html('<https://a.dev>', on), '<p><a href="https://a.dev">https://a.dev</a></p>\n');
   assert.equal(html('a <b>x</b>'), '<p>a <b>x</b></p>\n');
 });
+
+void test('leadingWhitespace keeps what was typed past container structure', () => {
+  const on = { leadingWhitespace: true };
+  const ws = (s: string) => `<span data-leading-whitespace="">${s}</span>`;
+  assert.equal(
+    html('Plan\n   one\n\ttab\n \t mixed', on),
+    `<p>Plan\n${ws('   ')}one\n${ws('\t')}tab\n${ws(' \t ')}mixed</p>\n`
+  );
+  assert.equal(html('  First\r\nnext', on), `<p>${ws('  ')}First\nnext</p>\n`);
+  assert.equal(
+    html('a  \n   hard\\\n  escaped', on),
+    `<p>a<br />\n${ws('   ')}hard<br />\n${ws('  ')}escaped</p>\n`
+  );
+  // only whitespace past each container's own markers and indentation counts
+  for (const [source, line] of [
+    ['- item\n  continued', 'continued'],
+    ['- item\ncontinued', 'continued'],
+    ['- item\n continued', 'continued'],
+    ['- item\n    more', `${ws('  ')}more`],
+    ['- item\n\tsplit', `${ws('  ')}split`],
+    ['-\tx\n\t  y', `${ws('  ')}y`],
+    ['10.  x\n       y', `${ws('  ')}y`],
+    ['-    x\n         y', `${ws('    ')}y`],
+    ['- [ ] task\n      under', `${ws('    ')}under`],
+    ['> - item\n>     more', `${ws('  ')}more`],
+    ['- a\n  - b\n      c', `${ws('  ')}c`],
+  ]) {
+    assert.ok(html(source, on).includes(`\n${line}</li>`), source);
+  }
+  assert.equal(html('> a\n>    b', on), `<blockquote>\n<p>a\n${ws('   ')}b</p>\n</blockquote>\n`);
+  assert.equal(html('> a\n   lazy', on), '<blockquote>\n<p>a\nlazy</p>\n</blockquote>\n');
+  assert.match(html('- > a\n  >    b', on), new RegExp(`<p>a\\n${ws('   ')}b</p>`));
+  // converting to HTML trims what follows a line break, which the span replaces
+  assert.equal(html('a\n &#32;b', on), `<p>a\n${ws(' ')}b</p>\n`);
+  assert.equal(html('a\n   ` npm i`', on), `<p>a\n${ws('   ')}<code>npm i</code></p>\n`);
+  assert.equal(
+    html('a\n  [ docs](u) **&#32;b**', on),
+    `<p>a\n${ws('  ')}<a href="u">docs</a> <strong> b</strong></p>\n`
+  );
+  // no span where the line still starts with whitespace or a line break
+  assert.equal(html('a\n   ***&#32;b***', on), '<p>a\n<em><strong> b</strong></em></p>\n');
+  assert.equal(html('  &#32;b', on), '<p> b</p>\n');
+  assert.equal(html('a\n  \\\nb', on), '<p>a\n<br />\nb</p>\n');
+  // code, headings, footnotes and alert markers keep CommonMark's reading
+  assert.equal(html('Plan\n\n    code\n      deeper', on), html('Plan\n\n    code\n      deeper'));
+  assert.equal(html('a\n  b\n---', on), '<h2>a\nb</h2>\n');
+  assert.doesNotMatch(html('x[^1]\n\n[^1]: a\n    b', on), /leading/);
+  assert.equal(
+    html('>  [!NOTE]\n>    body', on),
+    `<blockquote>\n<p>[!NOTE]\n${ws('   ')}body</p>\n</blockquote>\n`
+  );
+  // indent: lines already indented, as content cut out of a list item
+  assert.equal(
+    html('first\n  continued\n    deeper', { leadingWhitespace: { indent: 2 } }),
+    `<p>first\ncontinued\n${ws('  ')}deeper</p>\n`
+  );
+  assert.equal(html('Plan\n   one'), '<p>Plan\none</p>\n');
+  const session = createHtmlSession();
+  session.render('Plan\n', on);
+  assert.equal(session.render('Plan\n   one', on).html, `<p>Plan\n${ws('   ')}one</p>\n`);
+  assert.equal(session.render('Plan\n   one').html, '<p>Plan\none</p>\n');
+});
