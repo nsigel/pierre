@@ -363,7 +363,9 @@
       (then (call $htmlCodeButton (i32.const 0) (local.get $live))))
     (if (i32.and (global.get $fmt) (i32.const $Fmt.download))
       (then (call $htmlCodeButton (i32.const 1) (local.get $live))))
-    (out.str "</span></div><pre dir=\22ltr\22>")
+    (out.str "</span></div><pre dir=\22ltr\22")
+    (call $outCodeSourcePos (local.get $r))
+    (call $outByte (i32.const ">"))
     (if (i32.and (i32.eqz (local.get $open))
           (i32.ne (i32.and (global.get $fmt) (i32.const $Fmt.numbers)) (i32.const 0)))
       (then

@@ -9,6 +9,10 @@
   (global $contentLen (mut i32) (i32.const 0))
   (global $contentBase (mut i32) (i32.const 0))
   (global $contentInputEnd (mut i32) (i32.const 0)) ;; source end, including rebuilt content
+  ;; The record whose lines rebuilt content came from, or 0 for a table cell,
+  ;; whose rebuilt content starts at $cellSrc without escaped pipes' backslashes.
+  (global $contentRec (mut i32) (i32.const 0))
+  (global $cellSrc (mut i32) (i32.const 0))
 
   (func $contentAt (param $off i32) (result i32)
     (i32.add (global.get $contentBase) (local.get $off)))

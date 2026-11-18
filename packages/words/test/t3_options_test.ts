@@ -108,3 +108,79 @@ void test('codeMeta puts the info string after the language on <code>', () => {
   );
   assert.equal(formatted.match(/data-meta/g)?.length, 1);
 });
+
+/** Each element with a source position, and the source bytes it covers. */
+function spans(source: string, output: string): string[] {
+  const bytes = new TextEncoder().encode(source);
+  return [...output.matchAll(/<(\w+)[^>]*?data-sourcepos="(\d+)-(\d+)"/g)].map(
+    ([, tag, start, end]) =>
+      `${tag} ${dec.decode(bytes.slice(Number(start), Number(end)))}`
+  );
+}
+
+void test('sourcePositions marks list items, links, images, and code', () => {
+  const on = { sourcePositions: true };
+  const source = [
+    '- ü [l](u) <http://x.y> www.z.com ![i](p "t") [r]',
+    '- b',
+    '',
+    '  ```js',
+    '  x',
+    '  ```  ',
+    '- # h ##',
+    '> 1. q',
+    '>    lazy',
+    '',
+    '[r]: /v',
+    '',
+    '|[a](b) \\| [c](d)|',
+    '|-|',
+    '',
+    '-',
+    '',
+    '    indented',
+    '    code',
+    '',
+    '```',
+    'open',
+  ].join('\n');
+  assert.deepEqual(spans(source, html(source, on)), [
+    'li - ü [l](u) <http://x.y> www.z.com ![i](p "t") [r]',
+    'a [l](u)',
+    'a <http://x.y>',
+    'a www.z.com',
+    'img ![i](p "t")',
+    'a [r]',
+    'li - b\n\n  ```js\n  x\n  ```  ',
+    'pre ```js\n  x\n  ```  ',
+    'li - # h ##',
+    'li 1. q\n>    lazy',
+    'a [a](b)',
+    'a [c](d)',
+    'li -',
+    'pre     indented\n    code',
+    'pre ```\nopen',
+  ]);
+  assert.doesNotMatch(html(source), /data-sourcepos/);
+  // raw HTML passes through untouched
+  assert.equal(html('<a href="x">y</a>', on), '<p><a href="x">y</a></p>\n');
+});
+
+void test('sourcePositions count from the start of a session', () => {
+  const on = { sourcePositions: true };
+  const source =
+    'ü [a](b)\n\n- x [c](d)\n\nmore\n\n```ts\nline\n```\n\nend [e](f)\n';
+  const session = createHtmlSession();
+  let last = '';
+  for (let i = 1; i <= source.length; i++)
+    last = session.render(source.slice(0, i), on).html;
+  assert.equal(last, html(source, on));
+  // an open fence grows its position as it streams
+  const fence = createHtmlSession();
+  fence.render('```\na', on);
+  assert.deepEqual(spans('```\nab', fence.render('```\nab', on).html), [
+    'pre ```\nab',
+  ]);
+  const formatted = createHtmlRenderer(on).render(source, false).html;
+  assert.deepEqual(spans(source, formatted), spans(source, last));
+});

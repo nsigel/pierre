@@ -174,6 +174,7 @@
         (global.set $out (call $copyAt (global.get $out) (global.get $contentBase)
           (global.get $contentLen)))
         (return)))
+    (global.set $contentRec (local.get $r))
     (global.set $singleLineContent (i32.and
       (i32.eq (i32.load offset=$R.nLines (local.get $r)) (i32.const 1))
       (i32.eqz (i32.and (i32.load8_u offset=1 (local.get $r))
@@ -495,6 +496,9 @@
          (if (i32.eqz (global.get $plain))
            (then
              (call $linkParts (local.get $close))
+             (if (i32.and (global.get $ext) (i32.const 32))
+               (then (call $noteSourcePos (local.get $b)
+                 (i32.load offset=$M.end (call $slotAt (local.get $close))) (local.get $image))))
              (if (global.get $mode)
                (then (call $sgrOn
                  (select (i32.const $S.dim) (i32.const $S.linkText) (local.get $image))))
@@ -527,6 +531,8 @@
                 (call $sgrOff (i32.const $S.dim)))
               (else (call $htmlLinkClose (local.get $image))))))
         (return))
+       (if (i32.and (global.get $ext) (i32.const 32))
+         (then (call $noteSourcePos (local.get $b) (local.get $e) (i32.const 0))))
        ;; An autolink's angle brackets are not part of its URL. Its email kind
        ;; maps to the extended autolink's mailto: kind.
        (local.set $k (i32.eq (local.get $t) (enum.get $Mk.autolink)))
@@ -878,6 +884,8 @@
     (local.set $beg (call $skipSpace (local.get $beg) (local.get $end)))
     (local.set $end (call $trimSpaceBack (local.get $end) (local.get $beg)))
     (global.set $contentInputEnd (local.get $end))
+    (global.set $contentRec (i32.const 0))
+    (global.set $cellSrc (local.get $beg))
     (if (local.get $unescapePipe)
       (then
         (call $ensureScratch (i32.add (i32.sub (local.get $end) (local.get $beg)) (i32.const 64)))

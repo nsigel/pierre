@@ -647,8 +647,10 @@ export function createHtmlSession(): {
       // the `<code>` tag, then the code.
       const suffix =
         form === undefined ? '</code></pre>\n' : '\0</code></pre></div>\n';
+      // A fence's source position grows with it: only the parser updates it.
       if (
         !definitions &&
+        (ext & 32) === 0 &&
         (form === undefined
           ? pending.startsWith('<pre data-markdown-incomplete><code')
           : pending.charCodeAt(0) === 0 && pending.charCodeAt(1) !== 48) &&

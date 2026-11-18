@@ -29,7 +29,7 @@
     "quote"     ;; container
     "ul"        ;; container, data = bullet character
     "ol"        ;; container, data = start number, aux = delimiter character
-    "li"        ;; container
+    "li"        ;; container, data = the marker's address
     "hr"
     "heading"   ;; data = level
     "code"      ;; data = info string begin, aux = info string end

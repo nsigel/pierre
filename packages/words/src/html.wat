@@ -28,6 +28,11 @@
       (then
         (out.str "<li>")
         (if (global.get $fmt) (then (call $mark (i32.const 2) (i32.const 0))))
+        (if (i32.and (global.get $ext) (i32.const 32))
+          (then
+            (global.set $out (i32.sub (global.get $out) (i32.const 1)))
+            (call $outSourcePos (i32.load offset=8 (local.get $r)) (call $itemEnd (local.get $r)))
+            (call $outByte (i32.const ">"))))
         (return)))
     (if (i32.and (i32.eq (local.get $t) (enum.get $Blk.ol))
           (i32.ne (i32.load offset=8 (local.get $r)) (i32.const 1)))
@@ -156,6 +161,7 @@
     (if (i32.and (i32.ne (i32.and (i32.load8_u (i32.const 1)) (i32.const 8)) (i32.const 0))
           (i32.eq (local.get $r) (global.get $incompleteCodeRec)))
       (then (out.str " data-markdown-incomplete")))
+    (call $outCodeSourcePos (local.get $r))
     (out.str "><code class=\22language-")
     (local.set $word (global.get $out))
     (call $htmlInfoWord (local.get $r))
@@ -529,22 +535,27 @@
             (out.str " title=\22")
             (call $htmlLinkText (global.get $linkTitleBeg) (global.get $linkTitleEnd) (i32.const 3))
             (call $outByte (i32.const 34))))
+        (call $outLinkSourcePos (i32.const 0))
         (call $outByte (i32.const ">"))
         (return)))
     (out.str "<a href=\22")
     (call $htmlUrl (i32.const 3))
     (call $htmlTitle)
-    (out.str "\22>"))
+    (call $outByte (i32.const 34))
+    (call $outLinkSourcePos (i32.const 0))
+    (call $outByte (i32.const ">")))
 
   (func $htmlLinkClose (param $image i32)
     (if (local.get $image)
       (then
         (call $htmlTitle)
+        (call $outByte (i32.const 34))
+        (call $outLinkSourcePos (i32.const 1))
         (if (global.get $fmt)
           (then
-            (out.str "\22 loading=\22lazy\22>")
+            (out.str " loading=\22lazy\22>")
             (if (global.get $imgDrop) (then (global.set $out (global.get $imgDrop)))))
-          (else (out.str "\22 />")))
+          (else (out.str " />")))
         (return)))
     (out.str "</a>"))
 
@@ -555,13 +566,211 @@
       (then
         (out.str "<a data-markdown=\22a\22")
         (call $htmlHref (local.get $kind) (local.get $flags))
+        (call $outLinkSourcePos (i32.const 0))
         (call $outByte (i32.const ">")))
       (else
         (out.str "<a href=\22")
         (if (i32.eq (local.get $kind) (i32.const 1)) (then (out.str "http://")))
         (if (i32.eq (local.get $kind) (i32.const 2)) (then (out.str "mailto:")))
         (call $htmlUrl (local.get $flags))
-        (out.str "\22>")))
+        (call $outByte (i32.const 34))
+        (call $outLinkSourcePos (i32.const 0))
+        (call $outByte (i32.const ">"))))
     (call $htmlLinkText (global.get $linkUrlBeg) (global.get $linkUrlEnd) (local.get $flags))
     (out.str "</a>"))
+
+  ;; sourcePositions (extension bit 5)
+
+  ;; The input offset of content offset $off: rebuilt content maps back
+  ;; through its record's lines, or for a cell past its escaped pipes.
+  (func $srcOffset (param $off i32) (result i32)
+    (local $p i32)
+    (block $mapped
+      (if (i32.lt_u (global.get $contentBase) (global.get $eof))
+        (then
+          (local.set $p (i32.add (global.get $contentBase) (local.get $off)))
+          (br $mapped)))
+      (if (global.get $contentRec)
+        (then
+          (local.set $p (call $completeInputAt (global.get $contentRec) (local.get $off)))
+          (br $mapped)))
+      (local.set $p (global.get $cellSrc))
+      (block $done
+        (loop $l
+          (br_if $done (i32.eqz (local.get $off)))
+          (local.set $p (i32.add (local.get $p) (i32.add (i32.const 1)
+            (i32.eq (i32.load16_u (local.get $p)) (i32.const 0x7c5c)))))
+          (local.set $off (i32.sub (local.get $off) (i32.const 1)))
+          (br $l))))
+    (local.get $p))
+
+  ;; the data-sourcepos attribute of the input range [$beg, $end)
+  (func $outSourcePos (param $beg i32) (param $end i32)
+    (local $base i32)
+    (local.set $base (i32.sub (i32.load (i32.const 44)) (i32.const $mem.input)))
+    (out.str " data-sourcepos=\22")
+    (call $outNum (i32.add (local.get $base) (local.get $beg)))
+    (call $outByte (i32.const "-"))
+    (call $outNum (i32.add (local.get $base) (local.get $end)))
+    (call $outByte (i32.const 34)))
+
+  ;; The content range of the link, image, or directive that renders next, as
+  ;; input ranges. An image keeps its own until it closes.
+  (global $spBeg (mut i32) (i32.const 0))
+  (global $spEnd (mut i32) (i32.const 0))
+  (global $imgSpBeg (mut i32) (i32.const 0))
+  (global $imgSpEnd (mut i32) (i32.const 0))
+
+  (func $noteSourcePos (param $b i32) (param $e i32) (param $image i32)
+    (local.set $b (call $srcOffset (local.get $b)))
+    (local.set $e (call $srcOffset (local.get $e)))
+    (if (local.get $image)
+      (then
+        (global.set $imgSpBeg (local.get $b))
+        (global.set $imgSpEnd (local.get $e)))
+      (else
+        (global.set $spBeg (local.get $b))
+        (global.set $spEnd (local.get $e)))))
+
+  (func $outLinkSourcePos (param $image i32)
+    (if (i32.eqz (i32.and (global.get $ext) (i32.const 32))) (then (return)))
+    (if (local.get $image)
+      (then (call $outSourcePos (global.get $imgSpBeg) (global.get $imgSpEnd)))
+      (else (call $outSourcePos (global.get $spBeg) (global.get $spEnd)))))
+
+  ;; The end of a list marker at $p: digits and a delimiter, or a bullet.
+  (func $markerEnd (param $p i32) (result i32)
+    (if (i32.eqz (call $isDigit (i32.load8_u (local.get $p))))
+      (then (return (i32.add (local.get $p) (i32.const 1)))))
+    (loop $digits
+      (local.set $p (i32.add (local.get $p) (i32.const 1)))
+      (br_if $digits (call $isDigit (i32.load8_u (local.get $p)))))
+    (i32.add (local.get $p) (i32.const 1)))
+
+  ;; The end of item $r as mdast measures it: its last content byte. Leaves
+  ;; end with their trimmed last line; a fenced code block with its closing
+  ;; fence.
+  (func $itemEnd (param $r i32) (result i32)
+    (local $e i32)
+    (local $q i32)
+    (local $t i32)
+    (local $f i32)
+    (local $n i32)
+    (local $depth i32)
+    (local.set $e (call $markerEnd (i32.load offset=8 (local.get $r))))
+    (local.set $r (i32.add (local.get $r) (i32.load offset=4 (local.get $r))))
+    (block $done
+      (loop $l
+        (br_if $done (i32.ge_u (local.get $r) (global.get $recEnd)))
+        (local.set $t (i32.load8_u (local.get $r)))
+        (local.set $f (i32.load8_u offset=1 (local.get $r)))
+        (local.set $q (i32.const 0))
+        (if (i32.and (local.get $f) (i32.const $F.closer))
+          (then
+            (br_if $done (i32.eqz (local.get $depth)))
+            (local.set $depth (i32.sub (local.get $depth) (i32.const 1))))
+          (else
+            (if (i32.and (local.get $f) (i32.const $F.opener))
+              (then
+                (local.set $depth (i32.add (local.get $depth) (i32.const 1)))
+                (if (i32.eq (local.get $t) (enum.get $Blk.li))
+                  (then (local.set $q (call $markerEnd (i32.load offset=8 (local.get $r)))))))
+              (else
+                (if (i32.ne (local.get $t) (enum.get $Blk.none))
+                  (then
+                    (local.set $n (i32.load offset=$R.nLines (local.get $r)))
+                    (if (local.get $n)
+                      (then (local.set $q (call $lineEndOf
+                        (call $lineAt (local.get $r) (i32.sub (local.get $n) (i32.const 1))))))
+                      (else
+                        (if (i32.eq (local.get $t) (enum.get $Blk.code))
+                          (then (local.set $q (i32.load offset=12 (local.get $r)))))))
+                    (if (local.get $q)
+                      (then
+                        (if (i32.and (i32.eq (local.get $t) (enum.get $Blk.code))
+                              (i32.ne (i32.and (local.get $f) (i32.const $F.fenced)) (i32.const 0)))
+                          (then (local.set $q (call $fenceEnd (local.get $r) (local.get $q))))
+                          (else (local.set $q (call $trimmedLineEnd (local.get $q)))))))))))))
+        (if (i32.gt_u (local.get $q) (local.get $e)) (then (local.set $e (local.get $q))))
+        (local.set $r (i32.add (local.get $r) (i32.load offset=4 (local.get $r))))
+        (br $l)))
+    (local.get $e))
+
+  ;; The end of the line at $p without trailing spaces and tabs, not before $p.
+  (func $trimmedLineEnd (param $p i32) (result i32)
+    (call $trimSpaceBack (call $findLineEnd (local.get $p)) (local.get $p)))
+
+  ;; The end of fenced code block $r whose content ends at $q: past its
+  ;; closing fence when the next line holds one.
+  (func $fenceEnd (param $r i32) (param $q i32) (result i32)
+    (local $c i32)
+    (local $p i32)
+    (local $e i32)
+    (local $n i32)
+    ;; the fence character ends the run before the info string
+    (local.set $p (i32.load offset=8 (local.get $r)))
+    (loop $back
+      (local.set $c (i32.load8_u (local.tee $p (i32.sub (local.get $p) (i32.const 1)))))
+      (br_if $back (call $isSpaceByte (local.get $c))))
+    (local.set $q (call $trimmedLineEnd (local.get $q)))
+    (local.set $p (call $lineAfter (call $findLineEnd (local.get $q))))
+    (if (i32.ge_u (local.get $p) (global.get $eof)) (then (return (local.get $q))))
+    (local.set $e (call $findLineEnd (local.get $p)))
+    ;; container prefixes: indents and quote markers
+    (block $prefix
+      (loop $l
+        (br_if $prefix (i32.ge_u (local.get $p) (local.get $e)))
+        (br_if $prefix (i32.eqz (i32.or (call $isSpaceByte (i32.load8_u (local.get $p)))
+          (i32.eq (i32.load8_u (local.get $p)) (i32.const ">")))))
+        (local.set $p (i32.add (local.get $p) (i32.const 1)))
+        (br $l)))
+    (local.set $e (i32.sub (call $runEnd (local.get $p) (local.get $e) (local.get $c)) (local.get $p)))
+    (if (i32.ge_u (local.get $e)
+          (select (i32.const 2) (i32.const 3) (i32.eq (local.get $c) (i32.const "$"))))
+      (then (return (call $findLineEnd (local.get $p)))))
+    (local.get $q))
+
+  ;; The start of the fence run of fenced code block $r.
+  (func $fenceStart (param $r i32) (result i32)
+    (local $p i32)
+    (local $c i32)
+    (local.set $p (i32.load offset=8 (local.get $r)))
+    (loop $back
+      (local.set $c (i32.load8_u (local.tee $p (i32.sub (local.get $p) (i32.const 1)))))
+      (br_if $back (call $isSpaceByte (local.get $c))))
+    (loop $run
+      (br_if $run (i32.eq (i32.load8_u (local.tee $p (i32.sub (local.get $p) (i32.const 1))))
+        (local.get $c))))
+    (i32.add (local.get $p) (i32.const 1)))
+
+  ;; The data-sourcepos of code block $r, as mdast measures it: a fenced
+  ;; block from its opening fence through its closing fence line, an indented
+  ;; one over its indented lines.
+  (func $outCodeSourcePos (param $r i32)
+    (local $n i32)
+    (local $p i32)
+    (local $q i32)
+    (local $k i32)
+    (if (i32.eqz (i32.and (global.get $ext) (i32.const 32))) (then (return)))
+    (local.set $n (i32.load offset=$R.nLines (local.get $r)))
+    (if (local.get $n)
+      (then (local.set $q (call $lineEndOf
+        (call $lineAt (local.get $r) (i32.sub (local.get $n) (i32.const 1)))))))
+    (if (i32.and (i32.load8_u offset=1 (local.get $r)) (i32.const $F.fenced))
+      (then
+        (if (i32.eqz (local.get $n)) (then (local.set $q (i32.load offset=12 (local.get $r)))))
+        (call $outSourcePos (call $fenceStart (local.get $r))
+          (call $fenceEnd (local.get $r) (local.get $q)))
+        (return)))
+    ;; the indent before the first line: four columns, or a tab
+    (local.set $p (call $lineBeg (call $lineAt (local.get $r) (i32.const 0))))
+    (block $indent
+      (loop $back
+        (br_if $indent (i32.ge_u (local.get $k) (i32.const 4)))
+        (br_if $indent (i32.eqz (call $isSpaceByte (i32.load8_u (i32.sub (local.get $p) (i32.const 1))))))
+        (local.set $p (i32.sub (local.get $p) (i32.const 1)))
+        (local.set $k (select (i32.const 4) (i32.add (local.get $k) (i32.const 1))
+          (i32.eq (i32.load8_u (local.get $p)) (i32.const 9))))
+        (br $back)))
+    (call $outSourcePos (local.get $p) (local.get $q)))
 )

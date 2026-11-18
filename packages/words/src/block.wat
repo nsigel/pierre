@@ -722,6 +722,7 @@
     (local $save i32)
     (local $padding i32)
     (local $markerOff i32)
+    (local $markerAt i32)
     (local $tableCols i32)
     (local $tableN i32)
     (local $tableLine i32)
@@ -964,6 +965,7 @@
            (then
              (call $closeUnmatched (i32.const 1))
              (local.set $markerOff (global.get $indent))
+             (local.set $markerAt (global.get $fns))
              (call $advanceToFns (local.get $m))
              ;; One to four columns of space after the marker belong to it,
              ;; unless the line ends there; otherwise the marker takes one.
@@ -981,8 +983,9 @@
                  (call $pushContainer
                    (i32.add (enum.get $Blk.ul) (global.get $lmOrdered))
                    (global.get $lmChar) (i32.const 0) (global.get $lmStart))))
+             ;; an item's data is its marker's address (for source positions)
              (call $pushContainer (enum.get $Blk.li) (global.get $lmChar)
-               (i32.add (local.get $markerOff) (local.get $padding)) (i32.const 0))
+               (i32.add (local.get $markerOff) (local.get $padding)) (local.get $markerAt))
              (local.set $contType (enum.get $Blk.li))
              (local.set $maybeLazy (i32.const 0))
              (br $try))))
