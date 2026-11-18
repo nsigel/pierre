@@ -3194,6 +3194,8 @@
     (local.set $h (call $m.max (call $m.H (local.get $root)) (i32.const 0)))
     (local.set $d (call $m.max (call $m.D (local.get $root)) (i32.const 0)))
     (out.str "<svg xmlns=\22http://www.w3.org/2000/svg\22")
+    (if (global.get $mathSp)
+      (then (call $outSourcePos (global.get $mathSpBeg) (global.get $mathSpEnd))))
     (if (global.get $fmt)
       (then
         (if (local.get $display)
@@ -3274,7 +3276,13 @@
         (br $l)))
     (call $cr)
     (global.set $mOpen (i32.eq (local.get $r) (global.get $incompleteCodeRec)))
-    (if (i32.eqz (call $mathSvg (i32.sub (local.get $dst) (i32.const $mem.mathSrc)) (i32.const 1)))
+    ;; a block still open at EOF has no range yet
+    (if (i32.and (i32.ne (i32.and (global.get $ext) (i32.const 32)) (i32.const 0))
+          (i32.eqz (global.get $mOpen)))
+      (then (call $mathBlockSourcePos (local.get $r))))
+    (local.set $n (call $mathSvg (i32.sub (local.get $dst) (i32.const $mem.mathSrc)) (i32.const 1)))
+    (global.set $mathSp (i32.const 0))
+    (if (i32.eqz (local.get $n))
       (then (return (i32.const 0))))
     (call $outByte (i32.const 10))
     (i32.const 1))

@@ -420,3 +420,39 @@ void test('texDelimiters reads \\(…\\) and \\[…\\] as math', () => {
     assert.match(html('| a | b |\n| - | - |\n| $x|y$ | c |', options), /<td>\$x<\/td>/);
   }
 });
+
+void test('sourcePositions gives math its whole source range', () => {
+  const on = { math: true, texDelimiters: true, sourcePositions: true };
+  const source = [
+    'é $x$ \\(ü\\) $$y$$',
+    '',
+    '\\[',
+    'k \\]',
+    '',
+    '$$',
+    'm',
+    '$$  ',
+    '',
+    '```math',
+    'z',
+    '```',
+    '',
+    '| a |',
+    '| - |',
+    '| \\(p|q\\) |',
+    '',
+    '$$',
+    'open',
+  ].join('\n');
+  const output = html(source, on);
+  const bytes = new TextEncoder().encode(source);
+  assert.deepEqual(
+    [...output.matchAll(/<svg [^>]*?data-sourcepos="(\d+)-(\d+)"/g)].map(([, start, end]) =>
+      dec.decode(bytes.slice(Number(start), Number(end)))
+    ),
+    ['$x$', '\\(ü\\)', '$$y$$', '\\[\nk \\]', '$$\nm\n$$  ', '```math\nz\n```', '\\(p|q\\)']
+  );
+  // the block still open at EOF renders without a range
+  assert.equal(output.match(/<svg /g)?.length, 8);
+  assert.doesNotMatch(html('$x$', { math: true }), /data-sourcepos/);
+});

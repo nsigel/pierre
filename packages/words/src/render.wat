@@ -414,9 +414,14 @@
               (if (i32.and (i32.eq (local.get $t) (enum.get $Mk.math))
                     (i32.eqz (i32.or (global.get $mode) (global.get $plain))))
                 (then
-                  (if (call $mathInline (local.get $b) (local.get $e)
-                        (i32.eq (i32.load8_u offset=$M.ch (local.get $m)) (i32.const 2)))
-                    (then (return)))))
+                  (if (i32.and (global.get $ext) (i32.const 32))
+                    (then (call $noteMathSourcePos
+                      (call $srcOffset (i32.load offset=$M.beg (local.get $m)))
+                      (call $srcOffset (i32.load offset=$M.end (local.get $m))))))
+                  (local.set $q (call $mathInline (local.get $b) (local.get $e)
+                    (i32.eq (i32.load8_u offset=$M.ch (local.get $m)) (i32.const 2))))
+                  (global.set $mathSp (i32.const 0))
+                  (if (local.get $q) (then (return)))))
               (local.set $base (global.get $contentBase))
               ;; Strip one leading and trailing space together unless all content is
               ;; spaces or line breaks.

@@ -749,6 +749,8 @@
     (loop $back
       (local.set $c (i32.load8_u (local.tee $p (i32.sub (local.get $p) (i32.const 1)))))
       (br_if $back (call $isSpaceByte (local.get $c))))
+    ;; a `\[` math block
+    (if (i32.eq (local.get $c) (i32.const "[")) (then (return (i32.sub (local.get $p) (i32.const 1)))))
     (loop $run
       (br_if $run (i32.eq (i32.load8_u (local.tee $p (i32.sub (local.get $p) (i32.const 1))))
         (local.get $c))))
@@ -784,6 +786,41 @@
           (i32.eq (i32.load8_u (local.get $p)) (i32.const 9))))
         (br $back)))
     (call $outSourcePos (local.get $p) (local.get $q)))
+
+  ;; The input range of the math that renders next, while $mathSp is set.
+  (global $mathSp (mut i32) (i32.const 0))
+  (global $mathSpBeg (mut i32) (i32.const 0))
+  (global $mathSpEnd (mut i32) (i32.const 0))
+
+  (func $noteMathSourcePos (param $b i32) (param $e i32)
+    (global.set $mathSpBeg (local.get $b))
+    (global.set $mathSpEnd (local.get $e))
+    (global.set $mathSp (i32.const 1)))
+
+  ;; Math block $r from its opening fence through its closing one: `$$` or
+  ;; `\]` ends the last line or the next one. A `math` code fence measures
+  ;; as code.
+  (func $mathBlockSourcePos (param $r i32)
+    (local $n i32)
+    (local $q i32)
+    (local $e i32)
+    (local $t i32)
+    (local.set $n (i32.load offset=$R.nLines (local.get $r)))
+    (local.set $q (select
+      (call $lineEndOf (call $lineAt (local.get $r) (i32.sub (local.get $n) (i32.const 1))))
+      (i32.load offset=12 (local.get $r))
+      (local.get $n)))
+    (if (i32.eqz (i32.and (i32.load8_u offset=1 (local.get $r)) (i32.const $F.math)))
+      (then
+        (call $noteMathSourcePos (call $fenceStart (local.get $r))
+          (call $fenceEnd (local.get $r) (local.get $q)))
+        (return)))
+    (local.set $e (call $findLineEnd (local.get $q)))
+    (local.set $t (call $trimSpaceBack (local.get $e) (local.get $q)))
+    ;; the range keeps the spaces after the closing fence
+    (if (i32.lt_u (local.get $t) (i32.add (local.get $q) (i32.const 2)))
+      (then (local.set $e (call $findLineEnd (call $lineAfter (local.get $e))))))
+    (call $noteMathSourcePos (call $fenceStart (local.get $r)) (local.get $e)))
 
   ;; directives (extension bit 6)
 
