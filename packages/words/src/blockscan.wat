@@ -249,11 +249,6 @@
     (i32.shl (i32.and (call $mathCloses (global.get $lineEnd) (i32.const 1))
       (i32.lt_u (call $lineAfter (global.get $lineEnd)) (global.get $eof))) (i32.const 1)))
 
-  ;; whether the open code fence is a math block
-  (func $isMathFence (result i32)
-    (i32.or (i32.eq (global.get $codeFenceCh) (i32.const "$"))
-      (i32.eq (global.get $codeFenceCh) (i32.const "\5c"))))
-
   ;; The position of the `$$` (with $tex, the `\]`) that ends the line
   ;; [$p,$end), or 0. Such a line closes an open math block, and the text
   ;; before it is its last line. An odd run of backslashes before `$$` makes

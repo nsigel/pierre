@@ -238,7 +238,7 @@
         ;; completion ran (and cleared bit 6). Math fences still show.
         (if (i32.and
               (i32.and (i32.ne (i32.and (i32.load8_u (i32.const 1)) (i32.const 192)) (i32.const 0))
-                (i32.eqz (call $isMathFence)))
+                (i32.eqz (i32.eq (i32.and (global.get $codeFenceCh) (i32.const 7)) (i32.const 4))))
               (i32.and (i32.eqz (i32.load offset=$R.nLines (global.get $leafRec)))
                 (i32.and
                   (i32.ne (i32.load8_u (i32.sub (global.get $eof) (i32.const 1))) (i32.const 10))

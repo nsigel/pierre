@@ -29,6 +29,8 @@
   ;; open. Another blank line then changes no state.
   (global $idleBlank (mut i32) (i32.const 0))
   ;; open fenced code block
+  ;; The open fence's byte. `$` and `\` math fences are the ones with
+  ;; (byte & 7) == 4; backticks and tildes are not.
   (global $codeFenceCh (mut i32) (i32.const 0))
   (global $codeFenceN (mut i32) (i32.const 0))
   (global $codeFenceOff (mut i32) (i32.const 0))
@@ -135,7 +137,7 @@
             (return (i32.const 1))))
         (local.set $line (call $lineStartBefore (local.get $stop) (local.get $p)))
         (local.set $end (call $findLineEnd (local.get $stop)))
-        (if (call $isMathFence)
+        (if (i32.eq (i32.and (global.get $codeFenceCh) (i32.const 7)) (i32.const 4))
           (then (br_if $found
             (local.tee $close (call $mathFenceEnd (local.get $line) (local.get $end)
               (i32.eq (global.get $codeFenceCh) (i32.const "\5c"))))))
@@ -657,7 +659,7 @@
             (then
               (if (global.get $codeFenceCh)
                 (then
-                  (if (call $isMathFence)
+                  (if (i32.eq (i32.and (global.get $codeFenceCh) (i32.const 7)) (i32.const 4))
                     (then
                       (if (local.tee $n (call $mathFenceEnd (global.get $fns) (global.get $lineEnd)
                             (i32.eq (global.get $codeFenceCh) (i32.const "\5c"))))
@@ -839,7 +841,7 @@
               (global.set $codeFenceOff (local.get $markerOff))
               (local.set $save (call $skipSpace (global.get $pos) (global.get $lineEnd)))
               (i32.store offset=8 (global.get $leafRec) (local.get $save))
-              (if (call $isMathFence)
+              (if (i32.eq (i32.and (global.get $codeFenceCh) (i32.const 7)) (i32.const 4))
                 (then
                   ;; A math block has no info string.
                   (call $recFlag (global.get $leafRec) (i32.const $F.math))
