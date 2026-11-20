@@ -455,6 +455,21 @@ void test('math font switches and bold text', () => {
   );
 });
 
+void test('math size switches set the rest of their group', () => {
+  const svg = (tex: string) => html(`$$${tex}$$`, { math: true });
+  const strip = (tex: string) => svg(tex).replace(/aria-label="[^"]*"/, '');
+  assert.match(
+    svg('a {\\large b} c'),
+    /<text[^>]*>𝑎<\/text><text[^>]*font-size="1200">𝑏<\/text><text x="[0-9]+" y="0">𝑐/
+  );
+  // scripts shrink from the size; a size sets text style, as in KaTeX
+  assert.match(svg('\\Large x^2'), /font-size="1008">2</);
+  assert.equal(strip('\\large\\sum'), strip('\\large\\textstyle\\sum'));
+  assert.equal(strip('\\normalsize x^2'), strip('\\textstyle x^2'));
+  for (const tex of ['\\Huge', 'x^\\tiny', '{\\small'])
+    assert.match(svg(tex), /<svg/, tex);
+});
+
 void test('math arrows, braces and accents of KaTeX', () => {
   const svg = (tex: string) => html(`$$${tex}$$`, { math: true });
   const d = (tex: string) => /<path [^>]*d="([^"]*)"/.exec(svg(tex))![1];
