@@ -146,6 +146,8 @@
   ;; 0 display, 1 text, 2 script, 3 scriptscript; 4 = cramped
   (global $mStyle (mut i32) (i32.const 0))
   (global $mS (mut i32) (i32.const 1000))
+  ;; size of \large and the other size switches, thousandths
+  (global $mSize (mut i32) (i32.const 1000))
   ;; font of letters: -1 default, else the font command's value
   (global $mVariant (mut i32) (i32.const -1))
   (global $mNot (mut i32) (i32.const 0))
@@ -183,8 +185,8 @@
 
   (func $m.setStyle (param $s i32)
     (global.set $mStyle (local.get $s))
-    (global.set $mS (i32.load16_u offset=$mem.mathStatic+656
-      (i32.shl (i32.and (local.get $s) (i32.const 3)) (i32.const 1)))))
+    (global.set $mS (i32.div_u (i32.mul (global.get $mSize) (i32.load16_u offset=$mem.mathStatic+656
+      (i32.shl (i32.and (local.get $s) (i32.const 3)) (i32.const 1)))) (i32.const 1000))))
   (data (i32.const $mem.mathStatic+656) "\e8\03\e8\03\bc\02\26\02")
 
   ;; the style of scripts, fractions, and subscripts of style $s
@@ -2066,10 +2068,17 @@
       (call $m.push (call $m.kern (call $m.sc (i32.div_s (i32.mul (i32.sub (local.get $x) (i32.const 0x40)) (i32.const 1000)) (i32.const 18))))
         (i32.const 8) (i32.const 0))
       (return))
-      ;; style switches set the rest of the list
+      ;; style switches set the rest of the list; a value above 3 is a size,
+      ;; which sets text style as in KaTeX
       (local.set $old (global.get $mStyle))
-      (call $m.setStyle (local.get $x))
+      (local.set $m (global.get $mSize))
+      (if (i32.gt_u (local.get $x) (i32.const 3))
+        (then
+          (global.set $mSize (local.get $x))
+          (call $m.setStyle (i32.or (i32.const 1) (i32.and (local.get $old) (i32.const 4)))))
+        (else (call $m.setStyle (local.get $x))))
       (local.set $n (call $m.parseList (i32.and (local.get $flags) (i32.const 0x79))))
+      (global.set $mSize (local.get $m))
       (call $m.setStyle (local.get $old))
       (call $m.push (local.get $n) (i32.const 0) (i32.const 0))
       (return))
@@ -3173,6 +3182,7 @@
     (global.set $mDepth (i32.const 0))
     (global.set $mVariant (i32.const -1))
     (global.set $mNot (i32.const 0))
+    (global.set $mSize (i32.const 1000))
     (global.set $mp (i32.const $mem.mathSrc))
     (global.set $me (i32.add (i32.const $mem.mathSrc) (local.get $len)))
     ;; the decoders may read a few bytes past the end
