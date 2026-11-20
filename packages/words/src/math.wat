@@ -499,11 +499,20 @@
           (then
             (local.set $cp (local.get $neg))
             (global.set $mNot (i32.const 0))))))
+    ;; \boldsymbol: bold nabla and partial, a stroke on other symbols
+    (if (i32.eq (global.get $mVariant) (i32.const 9))
+      (then
+        (if (i32.eq (local.get $cp) (i32.const 0x2207)) (then (local.set $cp (i32.const 0x1d6c1))))
+        (if (i32.eq (local.get $cp) (i32.const 0x2202)) (then (local.set $cp (i32.const 0x1d6db))))))
     (local.set $n (call $m.glyph (local.get $cp) (local.get $class)))
     (if (global.get $mNot)
       (then
         (i32.store offset=$N.e (call $m.nAt (local.get $n)) (i32.const 2))
         (global.set $mNot (i32.const 0))))
+    (if (i32.and (i32.eq (global.get $mVariant) (i32.const 9)) (i32.lt_u (local.get $cp) (i32.const 0x1d400)))
+      (then
+        (i32.store offset=$N.e (call $m.nAt (local.get $n))
+          (i32.or (i32.load offset=$N.e (call $m.nAt (local.get $n))) (i32.const 4)))))
     (local.get $n))
 
   ;; ---- the atom stack
@@ -3204,6 +3213,8 @@
                 (br_table $done $m.glyph $m.list $rule $path $text $done
                   (i32.load8_u (local.get $p))))
               (call $m.textOpen (local.get $n) (local.get $x) (local.get $y))
+              (if (i32.and (i32.load offset=$N.e (local.get $p)) (i32.const 4))
+                (then (out.str " stroke=\22currentColor\22 stroke-width=\2230\22")))
               (out.str ">")
               (call $m.outCp (i32.load offset=$N.a (local.get $p)))
               ;; a combining long solidus after \not
