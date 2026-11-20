@@ -521,6 +521,9 @@ void test('math size switches set the rest of their group', () => {
   assert.equal(strip('\\large\\sum'), strip('\\large\\textstyle\\sum'));
   assert.equal(strip('\\normalsize x^2'), strip('\\textstyle x^2'));
   for (const tex of ['\\Huge', 'x^\\tiny', '{\\small'])
+    assert.match(svg(tex), /<svg/, tex);
+});
+
 void test('math \\tag numbers a display formula', () => {
   const svg = (tex: string) => html(`$$${tex}$$`, { math: true });
   const width = (out: string) => Number(/width="([^"]*)em"/.exec(out)![1]);
