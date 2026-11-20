@@ -311,6 +311,11 @@ void test('math layout covers common constructs', () => {
     svg('\\int\\displaylimits_a^b').replace(/aria-label="[^"]*"/, ''),
     svg('\\int\\limits_a^b').replace(/aria-label="[^"]*"/, '')
   );
+  // an integral's upper limit starts at its advance, the lower one tucks under
+  assert.match(
+    svg('\\int_0^1'),
+    /<text x="1224" [^>]*>1<\/text><text x="810" /
+  );
   // \boxed sets its argument in display style, even inline
   assert.doesNotMatch(
     html('$\\boxed{\\frac{a}{b}}$', { math: true }),
