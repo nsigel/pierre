@@ -283,6 +283,8 @@ void test('math layout covers common constructs', () => {
     )
   );
   assert.match(svg('\\text{if } x'), /style="white-space:pre">if <\/text>/);
+  // a space in text is as wide as the font draws it, so `\%` follows `b`
+  assert.match(svg('\\text{a b\\%}'), /<text x="1235" y="0"[^>]*>%</);
   assert.match(svg('\\color{red}{x}'), /<g color="red" fill="red">/);
   // colors that could leave the attribute are dropped
   assert.doesNotMatch(svg('\\color{red" onload="x}{x}'), /<g color/);
