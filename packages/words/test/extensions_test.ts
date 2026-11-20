@@ -244,6 +244,8 @@ void test('math layout covers common constructs', () => {
   assert.match(svg('\\lim_{x\\to 0}'), />lim<\/text>/);
   assert.match(svg('\\sqrt[3]{x}'), /<path /);
   assert.match(svg('\\left( \\frac{a}{b} \\right)'), /<path d="M/);
+  // a tall brace is a filled outline, not a stroked line
+  assert.match(svg('\\left\\{ \\frac{a}{b} \\right.'), /<path d="M[^"]+Z"\/>/);
   // an accent over one letter takes scripts as the letter does
   const subY = (tex: string) =>
     /<text[^>]*font-size="700"[^>]*>/.exec(svg(tex))?.[0];
