@@ -155,6 +155,8 @@
   (global $mOpen (mut i32) (i32.const 0))
   (global $mLastClass (mut i32) (i32.const 0))
   (global $mHline (mut i32) (i32.const 0))
+  ;; the \tag of a display formula, 0 for none, -1 in inline math
+  (global $mTag (mut i32) (i32.const 0))
   (global $cmdP (mut i32) (i32.const 0))
   (global $cmdLen (mut i32) (i32.const 0))
   ;; where the next macro expansion with an argument goes, past the source
@@ -2290,10 +2292,23 @@
           (if (i32.eq (call $m.peek) (i32.const "]"))
             (then (global.set $mp (i32.add (global.get $mp) (i32.const 1)))))))
       (return))
-      ;; ignored: \label and \tag drop their argument, \hline marks the row
-      (if (i32.le_u (i32.sub (local.get $x) (i32.const 1)) (i32.const 1))
-        (then (drop (call $m.rawArg))))
-      (if (i32.eq (local.get $x) (i32.const 3)) (then (global.set $mHline (i32.const 1))))
+      ;; ignored: \label drops its argument, \hline marks the row
+      (if (i32.eq (local.get $x) (i32.const 3)) (then (global.set $mHline (i32.const 1)) (return)))
+      (if (i32.eqz (local.get $x)) (then (return)))
+      (if (i32.or (i32.eq (local.get $x) (i32.const 1)) (i32.lt_s (global.get $mTag) (i32.const 0)))
+        (then (drop (call $m.rawArg)) (return)))
+      ;; \tag sets its text in parentheses at the formula's size, \tag* as it
+      ;; is; inline math drops both
+      (local.set $old (global.get $mStyle))
+      (call $m.setStyle (i32.const 0))
+      (local.set $n (call $m.list))
+      (if (i32.eq (local.get $x) (i32.const 2))
+        (then (call $m.append (local.get $n) (call $m.glyph (i32.const "(") (i32.const 0)) (i32.const 0) (i32.const 0))))
+      (call $m.append (local.get $n) (call $m.textArg (i32.const 0)) (call $m.W (local.get $n)) (i32.const 0))
+      (if (i32.eq (local.get $x) (i32.const 2))
+        (then (call $m.append (local.get $n) (call $m.glyph (i32.const ")") (i32.const 0)) (call $m.W (local.get $n)) (i32.const 0))))
+      (call $m.setStyle (local.get $old))
+      (global.set $mTag (local.get $n))
       (return))
       ;; \mathop, \mathbin and the other class commands
       (local.set $n (call $m.arg))
@@ -3202,7 +3217,19 @@
         (global.set $mBits (i32.const 0))
         (memory.fill (i32.const $mem.mathInfixBits) (i32.const 0) (i32.const 3072))))
     (global.set $mInfix (i32.const $mem.mathInfix))
+    (global.set $mTag (i32.sub (i32.const 0) (i32.eqz (local.get $display))))
     (local.set $root (call $m.grid (i32.const -1)))
+    ;; A tag goes 2em right of the formula. One SVG cannot reach the right
+    ;; edge, so as much space on the left keeps the formula centered.
+    (if (i32.gt_s (global.get $mTag) (i32.const 0))
+      (then
+        (local.set $w (i32.add (call $m.W (global.get $mTag)) (i32.const 2000)))
+        (local.set $n (call $m.list))
+        (call $m.append (local.get $n) (local.get $root) (local.get $w) (i32.const 0))
+        (call $m.append (local.get $n) (global.get $mTag)
+          (i32.add (i32.add (call $m.W (local.get $root)) (local.get $w)) (i32.const 2000)) (i32.const 0))
+        (local.set $root (local.get $n))
+        (local.set $w (i32.const 0))))
     (if (global.get $mFail) (then (return (i32.const 0))))
     (local.set $w (call $m.max (call $m.W (local.get $root)) (i32.const 1)))
     (local.set $h (call $m.max (call $m.H (local.get $root)) (i32.const 0)))

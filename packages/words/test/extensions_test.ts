@@ -476,6 +476,21 @@ void test('math size switches set the rest of their group', () => {
   assert.equal(strip('\\large\\sum'), strip('\\large\\textstyle\\sum'));
   assert.equal(strip('\\normalsize x^2'), strip('\\textstyle x^2'));
   for (const tex of ['\\Huge', 'x^\\tiny', '{\\small'])
+void test('math \\tag numbers a display formula', () => {
+  const svg = (tex: string) => html(`$$${tex}$$`, { math: true });
+  const width = (out: string) => Number(/width="([^"]*)em"/.exec(out)![1]);
+  assert.equal(glyphs(svg('E=mc^2\\tag{1}')), '𝐸=𝑚𝑐2(1)');
+  assert.equal(glyphs(svg('x\\tag*{A$^2$}')), '𝑥A2');
+  // the formula stays centered: the tag's space is added on both sides
+  const tagged = svg('x\\tag{1}');
+  const x = Number(/<text x="([0-9]+)"/.exec(tagged)![1]) / 1000;
+  assert.equal(width(tagged), 2 * x + width(svg('x')));
+  // inline math drops it
+  assert.equal(
+    html('$x\\tag{1}$', { math: true }).replace(/aria-label="[^"]*"/, ''),
+    html('$x$', { math: true }).replace(/aria-label="[^"]*"/, '')
+  );
+  for (const tex of ['\\tag', '\\tag{', 'a^\\tag*'])
     assert.match(svg(tex), /<svg/, tex);
 });
 
