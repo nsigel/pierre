@@ -1288,11 +1288,12 @@
     (call $m.append (local.get $l) (local.get $g) (i32.const 0)
       (i32.sub (i32.div_s (i32.mul (i32.sub (call $m.H (local.get $g)) (call $m.D (local.get $g))) (local.get $f)) (i32.const 2000))
         (call $m.sc (i32.const $MC.axis))))
-    ;; the italic correction widens the operator; a subscript tucks under it
+    ;; STIX's integrals already hold their slant in the advance, so the italic
+    ;; correction does not widen them; a subscript tucks under by it
     (local.set $f (i32.div_s (i32.mul (call $m.IC (local.get $g)) (local.get $f)) (i32.const 1000)))
     (call $m.setBox (local.get $l)
-      (i32.add (i32.div_s (i32.mul (call $m.W (local.get $g)) (i32.load16_u offset=$N.scale (call $m.nAt (local.get $g))))
-        (global.get $mS)) (local.get $f))
+      (i32.div_s (i32.mul (call $m.W (local.get $g)) (i32.load16_u offset=$N.scale (call $m.nAt (local.get $g))))
+        (global.get $mS))
       (i32.add (local.get $half) (call $m.sc (i32.const $MC.axis)))
       (i32.sub (local.get $half) (call $m.sc (i32.const $MC.axis))))
     (i32.store offset=$N.ic (call $m.nAt (local.get $l)) (local.get $f))
