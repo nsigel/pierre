@@ -1269,9 +1269,10 @@
         (br_if $done (i32.ge_u (local.get $p) (local.get $end)))
         (local.set $cp (call $utf8At (local.get $p) (local.get $end)))
         (local.set $p (global.get $utf8Next))
+        ;; the font's space, which the browser draws
         (if (i32.eq (local.get $cp) (i32.const 32))
           (then
-            (local.set $w (i32.add (local.get $w) (i32.const 333)))
+            (local.set $w (i32.add (local.get $w) (i32.const 235)))
             (br $l)))
         (call $m.metricsAny (call $m.textCp (local.get $cp) (local.get $flags)))
         (local.set $w (i32.add (local.get $w)
