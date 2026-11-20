@@ -316,6 +316,8 @@ void test('math layout covers common constructs', () => {
   );
   // a NUL byte is U+FFFD, not the end of the formula
   assert.equal(glyphs(svg('a\0b')), '𝑎\ufffd𝑏');
+  // other control characters are ordinary symbols
+  assert.equal(glyphs(svg('a\x1bb')), '𝑎\x1b𝑏');
   // huge dimensions stop at 1000em instead of overflowing
   assert.match(svg('a\\kern{3000in}b'), /<text x="1000560" y="0">𝑏/);
 });

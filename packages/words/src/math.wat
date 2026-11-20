@@ -2609,8 +2609,10 @@
             (then
               (call $m.push (call $m.letter (local.get $c)) (i32.const 0) (i32.const 0))
               (br $next)))
-          (local.set $k (select (i32.load8_u offset=$mem.mathAscii (i32.sub (local.get $c) (i32.const 32))) (i32.const 0)
-            (i32.ge_u (local.get $c) (i32.const 32))))
+          ;; a control character takes the class of a space; a negative
+          ;; address would add to the offset past the end of memory
+          (local.set $k (i32.load8_u offset=$mem.mathAscii
+            (i32.sub (call $m.max (local.get $c) (i32.const 32)) (i32.const 32))))
           ;; a hyphen is a minus sign, an asterisk a centered one
           (if (i32.eq (local.get $c) (i32.const "-")) (then (local.set $c (i32.const 0x2212))))
           (if (i32.eq (local.get $c) (i32.const "*")) (then (local.set $c (i32.const 0x2217))))
