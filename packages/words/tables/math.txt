@@ -56,7 +56,7 @@ limits o limits:0 nolimits:1 displaylimits:2
 mod b bmod:0 pmod:1 mod:2 pod:3
 kern o hspace:0 hspace*:0 kern:0 mkern:1 mskip:1 hskip:0 mspace:1 rule:2 raisebox:3 vcenter:4
 cr o \:0 newline:0 cr:0
-ignore o nonumber:0 notag:0 allowbreak:0 relax:0 nobreak:0 label:1 tag:2 tag*:4 hline:3 hdashline:3 DOTSB:0 DOTSI:0 DOTSX:0
+ignore o nonumber:0 notag:0 allowbreak:0 relax:0 nobreak:0 label:1 tag:2 tag*:4 hline:3 hdashline:3 def:5 gdef:5 newcommand:6 renewcommand:6 DOTSB:0 DOTSI:0 DOTSX:0
 mathop O mathop:0 mathbin:2 mathrel:3 mathopen:4 mathclose:5 mathpunct:6 mathinner:7 mathord:8
 macro o Bbbk=\mathbb{k} argmax=\operatorname*{arg\,max} argmin=\operatorname*{arg\,min} plim=\operatorname{plim}\limits
 macro o varliminf=\operatorname*{\underline{lim}} varlimsup=\operatorname*{\overline{lim}} varinjlim=\operatorname*{\underrightarrow{lim}} varprojlim=\operatorname*{\underleftarrow{lim}}
