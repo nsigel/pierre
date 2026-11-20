@@ -244,6 +244,8 @@ void test('math layout covers common constructs', () => {
   assert.match(svg('\\lim_{x\\to 0}'), />lim<\/text>/);
   assert.match(svg('\\sqrt[3]{x}'), /<path /);
   assert.match(svg('\\left( \\frac{a}{b} \\right)'), /<path d="M/);
+  // a tall brace is a filled outline, not a stroked line
+  assert.match(svg('\\left\\{ \\frac{a}{b} \\right.'), /<path d="M[^"]+Z"\/>/);
   // an accent over one letter takes scripts as the letter does
   const subY = (tex: string) =>
     /<text[^>]*font-size="700"[^>]*>/.exec(svg(tex))?.[0];
@@ -283,6 +285,8 @@ void test('math layout covers common constructs', () => {
     )
   );
   assert.match(svg('\\text{if } x'), /style="white-space:pre">if <\/text>/);
+  // a space in text is as wide as the font draws it, so `\%` follows `b`
+  assert.match(svg('\\text{a b\\%}'), /<text x="1235" y="0"[^>]*>%</);
   assert.match(svg('\\color{red}{x}'), /<g color="red" fill="red">/);
   // colors that could leave the attribute are dropped
   assert.doesNotMatch(svg('\\color{red" onload="x}{x}'), /<g color/);
@@ -309,6 +313,11 @@ void test('math layout covers common constructs', () => {
     svg('\\int\\displaylimits_a^b').replace(/aria-label="[^"]*"/, ''),
     svg('\\int\\limits_a^b').replace(/aria-label="[^"]*"/, '')
   );
+  // an integral's upper limit starts at its advance, the lower one tucks under
+  assert.match(
+    svg('\\int_0^1'),
+    /<text x="1224" [^>]*>1<\/text><text x="810" /
+  );
   // \boxed sets its argument in display style, even inline
   assert.doesNotMatch(
     html('$\\boxed{\\frac{a}{b}}$', { math: true }),
@@ -316,6 +325,8 @@ void test('math layout covers common constructs', () => {
   );
   // a NUL byte is U+FFFD, not the end of the formula
   assert.equal(glyphs(svg('a\0b')), '𝑎\ufffd𝑏');
+  // other control characters are ordinary symbols
+  assert.equal(glyphs(svg('a\x1bb')), '𝑎\x1b𝑏');
   // huge dimensions stop at 1000em instead of overflowing
   assert.match(svg('a\\kern{3000in}b'), /<text x="1000560" y="0">𝑏/);
 });
@@ -326,6 +337,10 @@ void test('math supports the KaTeX symbols and aliases', () => {
   assert.equal(glyphs(svg('\\hbar')), 'ℏ');
   assert.equal(glyphs(svg('\\N\\R\\Z\\Complex\\Bbbk')), 'ℕℝℤℂ𝕜');
   assert.equal(glyphs(svg('\\Alpha\\Beta\\mathbf{\\Alpha}')), 'ΑΒ𝚨');
+  // \boldsymbol prints bold nabla and partial and strokes other symbols
+  assert.equal(glyphs(svg('\\bm{\\nabla\\partial}')), '𝛁𝛛');
+  assert.match(svg('\\bm{=}'), /stroke-width="30">=</);
+  assert.doesNotMatch(svg('\\bm{\\sum}'), /stroke/);
   assert.equal(glyphs(svg('\\lrArr\\llbracket\\lBrace\\nprec')), '⇔⟦⦃⊀');
   assert.equal(strip('a\\sub b\\isin c'), strip('a\\subset b\\in c'));
   assert.equal(glyphs(svg('\\textdollar\\textendash\\ss')), '$–ß');
@@ -368,6 +383,45 @@ void test('math macros take their argument and fit their buffer', () => {
   assert.match(svg(long + 'y'.repeat(50) + '}'), /<svg/);
   assert.match(svg(long + 'y'.repeat(600) + '}'), /<code>/);
   assert.match(svg('\\text{\\bf a}'.repeat(300)), /<svg/);
+  // \def and \newcommand define macros for the rest of the formula
+  assert.equal(strip('\\def\\half{\\frac12} \\half'), strip('\\frac12'));
+  assert.equal(
+    strip('\\newcommand{\\R}{\\mathbb{R}} \\R'),
+    strip('\\mathbb{R}')
+  );
+  assert.equal(
+    strip('\\newcommand{\\norm}[1]{\\lVert #1 \\rVert} \\norm{x}'),
+    strip('\\lVert x \\rVert')
+  );
+  assert.equal(
+    strip('\\def\\pair#1#2{(#1, #2)} \\pair{a}{b}'),
+    strip('(a, b)')
+  );
+  assert.equal(
+    strip('\\renewcommand\\vec[1]{\\mathbf{#1}} \\vec v'),
+    strip('\\mathbf v')
+  );
+  assert.match(svg('\\gdef'), /#c00/);
+  // recursive macros fail the formula instead of trapping or hanging
+  const chain = 'abcdefghijklmnop'
+    .split('')
+    .map(
+      (c, i, all) => `\\def\\${c}{\\${all[i + 1] ?? 'x'}\\${all[i + 1] ?? 'x'}}`
+    )
+    .join('');
+  for (const tex of [
+    '\\def\\a{\\a} \\a',
+    '\\def\\a{\\b}\\def\\b{\\a} \\a',
+    '\\def\\a{\\a\\a} \\a',
+    `${chain}\\a`,
+    '\\def\\a#1{\\a{#1#1}} \\a{x}',
+  ])
+    assert.match(svg(tex), /<code>/, tex);
+  // a definition ends with its formula
+  assert.match(
+    html('$\\def\\x{y}\\x$ $\\x$', { math: true }),
+    /𝑦<\/text>.*<g color="#c00" fill="#c00"><text[^>]*>\\x</
+  );
 });
 
 void test('math fractions: infix forms and \\genfrac', () => {
@@ -453,6 +507,39 @@ void test('math font switches and bold text', () => {
     svg('\\texttt{\\textbf{x}}'),
     /font-weight="bold"[^>]*font-family="monospace"/
   );
+});
+
+void test('math size switches set the rest of their group', () => {
+  const svg = (tex: string) => html(`$$${tex}$$`, { math: true });
+  const strip = (tex: string) => svg(tex).replace(/aria-label="[^"]*"/, '');
+  assert.match(
+    svg('a {\\large b} c'),
+    /<text[^>]*>𝑎<\/text><text[^>]*font-size="1200">𝑏<\/text><text x="[0-9]+" y="0">𝑐/
+  );
+  // scripts shrink from the size; a size sets text style, as in KaTeX
+  assert.match(svg('\\Large x^2'), /font-size="1008">2</);
+  assert.equal(strip('\\large\\sum'), strip('\\large\\textstyle\\sum'));
+  assert.equal(strip('\\normalsize x^2'), strip('\\textstyle x^2'));
+  for (const tex of ['\\Huge', 'x^\\tiny', '{\\small'])
+    assert.match(svg(tex), /<svg/, tex);
+});
+
+void test('math \\tag numbers a display formula', () => {
+  const svg = (tex: string) => html(`$$${tex}$$`, { math: true });
+  const width = (out: string) => Number(/width="([^"]*)em"/.exec(out)![1]);
+  assert.equal(glyphs(svg('E=mc^2\\tag{1}')), '𝐸=𝑚𝑐2(1)');
+  assert.equal(glyphs(svg('x\\tag*{A$^2$}')), '𝑥A2');
+  // the formula stays centered: the tag's space is added on both sides
+  const tagged = svg('x\\tag{1}');
+  const x = Number(/<text x="([0-9]+)"/.exec(tagged)![1]) / 1000;
+  assert.equal(width(tagged), 2 * x + width(svg('x')));
+  // inline math drops it
+  assert.equal(
+    html('$x\\tag{1}$', { math: true }).replace(/aria-label="[^"]*"/, ''),
+    html('$x$', { math: true }).replace(/aria-label="[^"]*"/, '')
+  );
+  for (const tex of ['\\tag', '\\tag{', 'a^\\tag*'])
+    assert.match(svg(tex), /<svg/, tex);
 });
 
 void test('math arrows, braces and accents of KaTeX', () => {
