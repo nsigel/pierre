@@ -326,6 +326,10 @@ void test('math supports the KaTeX symbols and aliases', () => {
   assert.equal(glyphs(svg('\\hbar')), 'ℏ');
   assert.equal(glyphs(svg('\\N\\R\\Z\\Complex\\Bbbk')), 'ℕℝℤℂ𝕜');
   assert.equal(glyphs(svg('\\Alpha\\Beta\\mathbf{\\Alpha}')), 'ΑΒ𝚨');
+  // \boldsymbol prints bold nabla and partial and strokes other symbols
+  assert.equal(glyphs(svg('\\bm{\\nabla\\partial}')), '𝛁𝛛');
+  assert.match(svg('\\bm{=}'), /stroke-width="30">=</);
+  assert.doesNotMatch(svg('\\bm{\\sum}'), /stroke/);
   assert.equal(glyphs(svg('\\lrArr\\llbracket\\lBrace\\nprec')), '⇔⟦⦃⊀');
   assert.equal(strip('a\\sub b\\isin c'), strip('a\\subset b\\in c'));
   assert.equal(glyphs(svg('\\textdollar\\textendash\\ss')), '$–ß');
