@@ -42,6 +42,7 @@ font o mathrm:0 mathit:1 mathbf:2 mathbb:3 mathcal:4 mathscr:5 mathfrak:6 mathsf
 text o text:0 textrm:0 textnormal:0 mbox:0 hbox:0 textit:1 textbf:2 texttt:8 textsf:7 emph:1 textup:0 textmd:0
 space o ,:43 thinspace:43 ::44 >:44 medspace:44 ;:45 thickspace:45 !:3d negthinspace:3d negmedspace:3c negthickspace:3b quad:52 qquad:64 enspace:49 enskip:49 nobreakspace:46 space:46 ~:46
 style o displaystyle:0 textstyle:1 scriptstyle:2 scriptscriptstyle:3
+style o tiny:1f4 scriptsize:2bc footnotesize:320 small:384 normalsize:3e8 large:4b0 Large:5a0 LARGE:6c0 huge:81a Huge:9b8
 color o color:0 textcolor:1
 begin o begin:0
 end o end:0
