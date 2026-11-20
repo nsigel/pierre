@@ -171,7 +171,9 @@ formula in one pass, as TeX's appendix G does:
   place of the command, so its atoms join the list that reads it. A body with an
   argument is first copied past the source with the argument's text. The copy is
   freed after it parses unless a text or color node points into it; the
-  remaining space runs out like the other limits.
+  remaining space runs out like the other limits. `\def` and `\newcommand` add
+  macros whose bodies stay in the source until the formula ends; together their
+  expansions may parse 64 KiB of TeX, so recursive ones fail the formula.
 - An infix `\over` is found after its numerator was laid out in the wrong style,
   so the list is parsed again, and the first pass's nodes are freed. A table of
   (start, split) pairs lets a numerator parsed again split its inner groups at

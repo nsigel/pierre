@@ -370,6 +370,45 @@ void test('math macros take their argument and fit their buffer', () => {
   assert.match(svg(long + 'y'.repeat(50) + '}'), /<svg/);
   assert.match(svg(long + 'y'.repeat(600) + '}'), /<code>/);
   assert.match(svg('\\text{\\bf a}'.repeat(300)), /<svg/);
+  // \def and \newcommand define macros for the rest of the formula
+  assert.equal(strip('\\def\\half{\\frac12} \\half'), strip('\\frac12'));
+  assert.equal(
+    strip('\\newcommand{\\R}{\\mathbb{R}} \\R'),
+    strip('\\mathbb{R}')
+  );
+  assert.equal(
+    strip('\\newcommand{\\norm}[1]{\\lVert #1 \\rVert} \\norm{x}'),
+    strip('\\lVert x \\rVert')
+  );
+  assert.equal(
+    strip('\\def\\pair#1#2{(#1, #2)} \\pair{a}{b}'),
+    strip('(a, b)')
+  );
+  assert.equal(
+    strip('\\renewcommand\\vec[1]{\\mathbf{#1}} \\vec v'),
+    strip('\\mathbf v')
+  );
+  assert.match(svg('\\gdef'), /#c00/);
+  // recursive macros fail the formula instead of trapping or hanging
+  const chain = 'abcdefghijklmnop'
+    .split('')
+    .map(
+      (c, i, all) => `\\def\\${c}{\\${all[i + 1] ?? 'x'}\\${all[i + 1] ?? 'x'}}`
+    )
+    .join('');
+  for (const tex of [
+    '\\def\\a{\\a} \\a',
+    '\\def\\a{\\b}\\def\\b{\\a} \\a',
+    '\\def\\a{\\a\\a} \\a',
+    `${chain}\\a`,
+    '\\def\\a#1{\\a{#1#1}} \\a{x}',
+  ])
+    assert.match(svg(tex), /<code>/, tex);
+  // a definition ends with its formula
+  assert.match(
+    html('$\\def\\x{y}\\x$ $\\x$', { math: true }),
+    /𝑦<\/text>.*<g color="#c00" fill="#c00"><text[^>]*>\\x</
+  );
 });
 
 void test('math fractions: infix forms and \\genfrac', () => {
