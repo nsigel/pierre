@@ -17,9 +17,13 @@
   (const $mem.mathRuns $mem.mathGlyphs+7000)
   (math-glyphs $mem.mathGlyphs $mem.mathGlyphsEnd $MG.stride)
   ;; atoms use the first half of their area; command groups that do not fit
-  ;; their area and the macro bodies take the second
+  ;; their area and the macro bodies take the second, up to the macros of
+  ;; \def and \newcommand: 16 of name, body, body end (u32), name length and
+  ;; argument count (u16); then the bounds of a macro's 9 arguments
   (const $m.atomsEnd $mem.mathAtoms+8192)
-  (math-commands $mem.mathCmds $mem.mathCmdsEnd $mem.mathNodes $mem.mathNodesEnd $m.atomsEnd $mem.mathAtomsEnd)
+  (const $m.defs $mem.mathAtomsEnd-512)
+  (const $m.args $m.defs+256)
+  (math-commands $mem.mathCmds $mem.mathCmdsEnd $mem.mathNodes $mem.mathNodesEnd $m.atomsEnd $m.defs)
 
   (data (i32.const $mem.mathStatic) "mod\00#c00")
   (const $mem.mathEnvs $mem.mathStatic+8)
@@ -155,6 +159,10 @@
   (global $mHline (mut i32) (i32.const 0))
   ;; the \tag of a display formula, 0 for none, -1 in inline math
   (global $mTag (mut i32) (i32.const 0))
+  ;; macros at $m.defs
+  (global $mDefs (mut i32) (i32.const 0))
+  ;; bytes of TeX that the macros at $m.defs may still expand to
+  (global $mBudget (mut i32) (i32.const 0))
   (global $cmdP (mut i32) (i32.const 0))
   (global $cmdLen (mut i32) (i32.const 0))
   ;; where the next macro expansion with an argument goes, past the source
@@ -1996,8 +2004,6 @@
     (local $i i32)
     (local $c i32)
     (local $d i32)
-    (local $dst i32)
-    (local $depth i32)
     (local.set $k (i32.shr_u (local.get $v) (i32.const 24)))
     (local.set $class (i32.and (i32.shr_u (local.get $v) (i32.const 21)) (i32.const 7)))
     (local.set $x (i32.and (local.get $v) (i32.const 0x1fffff)))
@@ -2281,6 +2287,9 @@
           (if (i32.eq (call $m.peek) (i32.const "]"))
             (then (global.set $mp (i32.add (global.get $mp) (i32.const 1)))))))
       (return))
+      ;; \def and \gdef 5, \newcommand and \renewcommand 6
+      (if (i32.ge_u (local.get $x) (i32.const 5))
+        (then (call $m.define (i32.eq (local.get $x) (i32.const 6))) (return)))
       ;; ignored: \label drops its argument, \hline marks the row
       (if (i32.eq (local.get $x) (i32.const 3)) (then (global.set $mHline (i32.const 1)) (return)))
       (if (i32.eqz (local.get $x)) (then (return)))
@@ -2306,15 +2315,34 @@
           (i32.eqz (local.get $x)))
         (select (i32.const $AF.displayLimits) (i32.const 0) (i32.eqz (local.get $x))))
       (return))
-    ;; Macros: the body's TeX parses here as if it were the source. A body
-    ;; with an argument is copied past the source first, with the argument's
-    ;; source for #1 to #4 (see tables/math.txt).
+    ;; Macros: the body's TeX parses here as if it were the source.
     (local.set $m (i32.add (i32.const $mem.mathCmds+1) (local.get $x)))
-    (local.set $n (i32.add (local.get $m) (i32.load8_u offset=$mem.mathCmds (local.get $x))))
-    (if (local.get $class)
+    (call $m.expand (local.get $m) (i32.add (local.get $m) (i32.load8_u offset=$mem.mathCmds (local.get $x)))
+      (local.get $class)))
+
+  ;; Parse the TeX [$m, $n) in place of a command: its atoms join the list
+  ;; that reads it. $args is 1 for a macro of tables/math.txt, whose argument
+  ;; goes in for #1 to #4, or 16 plus the argument count of a macro of \def or
+  ;; \newcommand. A body with arguments is copied past the source first.
+  (func $m.expand (param $m i32) (param $n i32) (param $args i32)
+    (local $k i32)
+    (local $p i32)
+    (local $l i32)
+    (local $c i32)
+    (local $d i32)
+    (local $i i32)
+    (local $dst i32)
+    (local $depth i32)
+    (local $old i32)
+    (local.set $k (i32.and (local.get $args) (i32.const 15)))
+    (if (local.get $k)
       (then
-        (local.set $p (call $m.rawArg))
-        (local.set $l (i32.add (local.get $p) (global.get $cmdLen)))
+        (loop $read
+          (local.set $p (call $m.rawArg))
+          (i32.store offset=$m.args (i32.shl (local.get $i) (i32.const 3)) (local.get $p))
+          (i32.store offset=$m.args+4 (i32.shl (local.get $i) (i32.const 3)) (i32.add (local.get $p) (global.get $cmdLen)))
+          (local.set $i (i32.add (local.get $i) (i32.const 1)))
+          (br_if $read (i32.lt_u (local.get $i) (local.get $k))))
         (local.set $dst (global.get $mTop))
         (block $copied
           (loop $copy
@@ -2328,6 +2356,18 @@
               (else
                 (local.set $d (i32.load8_u (local.get $m)))
                 (local.set $m (i32.add (local.get $m) (i32.const 1)))
+                ;; a table macro has one argument: #2 to #4 change its bars
+                (local.set $i (i32.const 0))
+                (if (i32.and (local.get $args) (i32.const 16))
+                  (then
+                    (local.set $i (i32.sub (local.get $d) (i32.const "1")))
+                    (local.set $d (i32.const "1"))))
+                (local.set $p (i32.const 0))
+                (local.set $l (i32.const 0))
+                (if (i32.lt_u (local.get $i) (local.get $k))
+                  (then
+                    (local.set $p (i32.load offset=$m.args (i32.shl (local.get $i) (i32.const 3))))
+                    (local.set $l (i32.load offset=$m.args+4 (i32.shl (local.get $i) (i32.const 3))))))
                 (local.set $i (local.get $p))
                 (local.set $depth (i32.const 0))
                 (block $arg
@@ -2366,6 +2406,13 @@
         (local.set $m (global.get $mTop))
         (local.set $n (local.get $dst))
         (global.set $mTop (i32.add (local.get $dst) (i32.const 8)))))
+    ;; Nesting stops a macro that expands to itself; this stops one whose
+    ;; expansions double at each level.
+    (if (i32.and (local.get $args) (i32.const 16))
+      (then
+        (global.set $mBudget (i32.sub (global.get $mBudget) (i32.add (i32.sub (local.get $n) (local.get $m)) (i32.const 32))))
+        (if (i32.lt_s (global.get $mBudget) (i32.const 0))
+          (then (global.set $mFail (i32.const 1)) (return)))))
     (local.set $old (global.get $mp))
     (local.set $l (global.get $me))
     (global.set $mp (local.get $m))
@@ -2376,10 +2423,102 @@
     (global.set $me (local.get $l))
     ;; No node points into the copied body, so its space and the splits found
     ;; in it are free again.
-    (if (i32.and (i32.ne (local.get $class) (i32.const 0)) (i32.le_u (global.get $mPin) (local.get $m)))
+    (if (i32.and (i32.ne (local.get $k) (i32.const 0)) (i32.le_u (global.get $mPin) (local.get $m)))
       (then
         (global.set $mTop (local.get $m))
         (global.set $mInfix (local.get $i)))))
+
+  ;; \def\name#1#2{body} and \newcommand{\name}[2]{body} define a macro for the
+  ;; rest of the formula; one of the same name replaces it, and past 16 they
+  ;; are dropped. Without a name the command shows in red.
+  (func $m.define (param $new i32)
+    (local $start i32)
+    (local $name i32)
+    (local $len i32)
+    (local $k i32)
+    (local $p i32)
+    (local $e i32)
+    (local.set $start (global.get $mp))
+    (if (i32.and (local.get $new) (i32.eq (call $m.peek) (i32.const "{")))
+      (then
+        (global.set $mp (i32.add (global.get $mp) (i32.const 1)))
+        (call $m.skipSpace)))
+    (if (i32.ne (call $m.peek) (i32.const "\5c"))
+      (then
+        (global.set $mp (local.get $start))
+        (call $m.unknown)
+        (return)))
+    (drop (call $m.readCmd))
+    (local.set $name (global.get $cmdP))
+    (local.set $len (global.get $cmdLen))
+    (if (local.get $new)
+      (then
+        (call $m.skipSpace)
+        (if (i32.eq (call $m.peek) (i32.const "}"))
+          (then (global.set $mp (i32.add (global.get $mp) (i32.const 1)))))
+        (call $m.skipSpace)
+        (if (i32.eq (call $m.peek) (i32.const "["))
+          (then
+            (global.set $mp (i32.add (global.get $mp) (i32.const 1)))
+            (local.set $k (i32.sub (call $m.peek) (i32.const "0")))
+            (if (i32.gt_u (local.get $k) (i32.const 9)) (then (local.set $k (i32.const 0))))
+            (loop $close
+              (if (i32.and (i32.ne (call $m.peek) (i32.const "]")) (i32.ne (call $m.peek) (i32.const 0)))
+                (then
+                  (global.set $mp (i32.add (global.get $mp) (i32.const 1)))
+                  (br $close))))
+            (if (call $m.peek) (then (global.set $mp (i32.add (global.get $mp) (i32.const 1))))))))
+      (else
+        (loop $param
+          (if (i32.eq (call $m.peek) (i32.const "#"))
+            (then
+              (global.set $mp (i32.add (global.get $mp) (i32.const 1)))
+              (if (i32.lt_u (i32.sub (call $m.peek) (i32.const "1")) (i32.const 9))
+                (then (global.set $mp (i32.add (global.get $mp) (i32.const 1)))))
+              (local.set $k (i32.add (local.get $k) (i32.const 1)))
+              (br $param))))
+        (local.set $k (call $m.min (local.get $k) (i32.const 9)))))
+    (local.set $p (call $m.rawArg))
+    (if (i32.eqz (local.get $len)) (then (return)))
+    (global.set $mPin (call $m.max (global.get $mPin) (i32.add (local.get $p) (global.get $cmdLen))))
+    (local.set $e (call $m.findDef (local.get $name) (local.get $len)))
+    (if (i32.eqz (local.get $e))
+      (then
+        (if (i32.ge_u (global.get $mDefs) (i32.const 16)) (then (return)))
+        (local.set $e (i32.add (i32.const $m.defs) (i32.shl (global.get $mDefs) (i32.const 4))))
+        (global.set $mDefs (i32.add (global.get $mDefs) (i32.const 1)))))
+    (i32.store (local.get $e) (local.get $name))
+    (i32.store offset=4 (local.get $e) (local.get $p))
+    (i32.store offset=8 (local.get $e) (i32.add (local.get $p) (global.get $cmdLen)))
+    (i32.store16 offset=12 (local.get $e) (local.get $len))
+    (i32.store16 offset=14 (local.get $e) (local.get $k)))
+
+  ;; the macro at $m.defs named [$p, $p + $len), or 0
+  (func $m.findDef (param $p i32) (param $len i32) (result i32)
+    (local $e i32)
+    (local $i i32)
+    (local.set $e (i32.add (i32.const $m.defs) (i32.shl (global.get $mDefs) (i32.const 4))))
+    (block $none
+      (loop $entry
+        (br_if $none (i32.le_u (local.get $e) (i32.const $m.defs)))
+        (local.set $e (i32.sub (local.get $e) (i32.const 16)))
+        (br_if $entry (i32.ne (i32.load16_u offset=12 (local.get $e)) (local.get $len)))
+        (local.set $i (i32.const 0))
+        (loop $byte
+          (br_if $entry (i32.ne (i32.load8_u (i32.add (local.get $p) (local.get $i)))
+            (i32.load8_u (i32.add (i32.load (local.get $e)) (local.get $i)))))
+          (local.set $i (i32.add (local.get $i) (i32.const 1)))
+          (br_if $byte (i32.lt_u (local.get $i) (local.get $len))))
+        (return (local.get $e))))
+    (i32.const 0))
+
+  ;; an unknown command: its name in red
+  (func $m.unknown
+    (local $n i32)
+    (local.set $n (call $m.wrap (call $m.textNode (i32.sub (global.get $cmdP) (i32.const 1))
+      (i32.add (global.get $cmdLen) (i32.const 1)) (i32.const 0))))
+    (i32.store offset=$N.e (call $m.nAt (local.get $n)) (i32.const -1))
+    (call $m.push (local.get $n) (i32.const 0) (i32.const 0)))
 
   ;; what #2, #4 and #3 of a macro put in place of a top-level |
   (const $m.bars $mem.mathStatic+960)
@@ -2545,6 +2684,14 @@
             (then
               (local.set $save (global.get $mp))
               (local.set $v (call $m.readCmd))
+              (if (global.get $mDefs)
+                (then
+                  (local.set $n (call $m.findDef (global.get $cmdP) (global.get $cmdLen)))
+                  (if (local.get $n)
+                    (then
+                      (call $m.expand (i32.load offset=4 (local.get $n)) (i32.load offset=8 (local.get $n))
+                        (i32.or (i32.load16_u offset=14 (local.get $n)) (i32.const 16)))
+                      (br $next)))))
               (if (i32.lt_s (local.get $v) (i32.const 0))
                 (then
                   (if (i32.eqz (global.get $cmdLen)) (then (br $next)))
@@ -2554,10 +2701,7 @@
                     (then
                       (call $m.push (call $m.kern (call $m.sc (i32.const 333))) (i32.const 8) (i32.const 0))
                       (br $next)))
-                  (local.set $n (call $m.wrap (call $m.textNode (i32.sub (global.get $cmdP) (i32.const 1))
-                    (i32.add (global.get $cmdLen) (i32.const 1)) (i32.const 0))))
-                  (i32.store offset=$N.e (call $m.nAt (local.get $n)) (i32.const -1))
-                  (call $m.push (local.get $n) (i32.const 0) (i32.const 0))
+                  (call $m.unknown)
                   (br $next)))
               (local.set $k (i32.shr_u (local.get $v) (i32.const 24)))
               ;; `\over` and the other infix fractions split the group
@@ -3204,6 +3348,8 @@
         (memory.fill (i32.const $mem.mathInfixBits) (i32.const 0) (i32.const 3072))))
     (global.set $mInfix (i32.const $mem.mathInfix))
     (global.set $mTag (i32.sub (i32.const 0) (i32.eqz (local.get $display))))
+    (global.set $mDefs (i32.const 0))
+    (global.set $mBudget (i32.const 65536))
     (local.set $root (call $m.grid (i32.const -1)))
     ;; A tag goes 2em right of the formula. One SVG cannot reach the right
     ;; edge, so as much space on the left keeps the formula centered.
